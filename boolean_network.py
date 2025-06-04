@@ -88,11 +88,18 @@ def create_rd_program(n, activate_not = True):
 
     return p, new_leaves
 
-def create_tree(n, activate_not = True):
-    p, leaves = create_rd_program(n, activate_not)
+def create_tree(n, not_everywhere = False, not_on_leaves = True):
+    flag = not not_everywhere and not_on_leaves
+    p, leaves = create_rd_program(n, activate_not = not_everywhere)
     i=0
     for node in leaves:
-        node.add_child(Node(i))
+        branch = node
+        if flag:
+            x = random.getrandbits(1)
+            if x:
+                branch = Node(2)
+                node.add_child(branch)
+        branch.add_child(Node(i))
         i+=1
 
     return p
