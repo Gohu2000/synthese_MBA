@@ -1,6 +1,6 @@
 import random
 
-dico_operators = {0: "and", 1: "or", 2: "not"}
+dico_operators = {0: "and", 1: "or", 2: "not", 3: "id"}
 
 class Node:
     def __init__(self, value = None):
@@ -13,9 +13,9 @@ class Node:
         self.children.append(child)
         child.parent = self
 
-    def print(self, prefixe="", dernier=True):
+    def print(self, prefixe="", dernier=True, operator=False):
         node_value = str(self.value)
-        if self.children != []:
+        if self.children != [] and operator:
             node_value = dico_operators[self.value]
         branche = "└── " if dernier else "├── "
         print(prefixe + branche + node_value)
@@ -23,6 +23,9 @@ class Node:
         for i, child in enumerate(self.children):
             last_child = (i == len(self.children) - 1)
             child.print(prefixe, last_child)
+    
+    def copy(self):
+        return Node(self.value)
 
 def create_rd_instance(n, nb_examples):
     l = []
@@ -110,9 +113,12 @@ def calcul(root, input):
     if n == 0:
         return input[root.value]
     if n == 1:
-        assert root.value == 2
+        assert root.value == 2 or root.value == 3
         child = root.children[0]
-        return 1-calcul(child, input)
+        if root.value == 2:
+            return 1-calcul(child, input)
+        if root.value == 3:
+            return calcul(child, input)
     if n == 2:
         child1 = root.children[0]
         child2 = root.children[1]
@@ -122,16 +128,63 @@ def calcul(root, input):
         if root.value == 0:
             return calcul(child1, input) and calcul(child2, input)
 
-def verify_program(p, instance):
+def create_score_tree(p, instance):
+    score = score_program(p, instance)
+    l_max_score = []
+
+    def calcul_score(node):
+        value = node.value
+        if value in [0, 1]:
+            node.value = 1 - value
+            new_score = score_program(p, instance)
+        if value in [2, 3]:
+            node.value = 5 - value
+            new_score = score_program(p, instance)
+        node.value = value
+        return new_score
+
+    def dfs(node, new_parent, max_score):
+        if node.children == []:
+            new_parent.add_child(node.copy())
+            return max_score
+        else:
+            score = calcul_score(node)
+            new_node = Node(score)
+            new_parent.add_child(new_node)
+            new_max_score = max(max_score, score)
+            for child in node.children:
+                dfs(child, new_node)
+
+    max_score = calcul_score(p)
+    root = Node(max_score)
+    l_max_score.append(root)
+    for child in p.children:
+        max_score = dfs(child, root, max_score)
+
+    return root, l_max_score
+
+def score_program(p, instance):
+    score = 0
+    n = len(instance)
+    for input, y in instance:
+        result = calcul(p, input)
+        if result == y:
+            score += 1
+    return score / n
+
+def performance_program(p, instance):
     for input, y in instance:
         result = calcul(p, input)
         print("obtenu : ", result, " attendu : ", y)
+    print(score_program(p, instance))
 
 def test(n, m):
     instance = create_rd_instance(n, m)
     root = create_tree(n)
-    root.print()
+    root.print(operator=True)
+    score_tree = create_score_tree(root, instance)
     print(instance)
-    verify_program(root, instance)
+    performance_program(root, instance)
+    score_tree.print()
 
-test(4, 2)
+test(20, 10)
