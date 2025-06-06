@@ -1,111 +1,144 @@
 import random
+from math import exp
 
 dico_operators = {0: "and", 1: "or", 2: "not", 3: "id"}
+gates = {1: ["not", "id"], 2: ["and", "or"]}
 
 class Node:
     def __init__(self, value = None):
         self.value = value
         self.parent = None
         self.children = []
+        self.score = {}
         
     def add_child(self, child):
         assert child.parent == None
         self.children.append(child)
         child.parent = self
 
-    def print(self, prefixe="", dernier=True, operator=False):
+    def print(self, prefixe="", dernier=True):
         node_value = str(self.value)
-        if self.children != [] and operator:
-            node_value = dico_operators[self.value]
         branche = "└── " if dernier else "├── "
         print(prefixe + branche + node_value)
         prefixe += "    " if dernier else "│   "
         for i, child in enumerate(self.children):
             last_child = (i == len(self.children) - 1)
             child.print(prefixe, last_child)
+
+    def print_score(self, prefixe="", dernier=True):
+        node_value = str(self.score)
+        branche = "└── " if dernier else "├── "
+        print(prefixe + branche + node_value)
+        prefixe += "    " if dernier else "│   "
+        for i, child in enumerate(self.children):
+            last_child = (i == len(self.children) - 1)
+            child.print_score(prefixe, last_child)
+
+    def update_tree_score(self, instance):
+        self.update_score(instance, self, score_formula(self, instance))
     
+    def update_score(self, instance, root, score):
+        arity = len(self.children)
+        n = len(instance[0][0])
+        current_value = self.value
+        self.score = {}
+        l_gates = list(range(n))
+        if arity != 0:
+            l_gates = gates[arity]
+
+        for i in l_gates:
+            if i != current_value:
+                self.value = i
+                self.score[i] = score_formula(root, instance) - score
+
+        for child in self.children:
+            child.update_score(instance, root, score)
+
     def copy(self):
         return Node(self.value)
 
-def create_rd_instance(n, nb_examples):
-    l = []
+def softmax(root, tau = 1):
+    f = lambda x: exp(tau*x)
+
+    def dfs_sum(node):
+        node_sum = 0
+        for k, v in node.score.items():
+            node_sum += f(v)
+
+        for child in node.children:
+            node_sum += dfs_sum(child)
+        return node_sum
+    
+    def dfs_proba(node, previous_proba):
+        node_proba = previous_proba
+        for k, v in node.score.items():
+            node_proba += f(v) / sum
+            if p <= node_proba:
+                node.value = k
+                return -1
+            
+        for child in node.children:
+            node_proba = dfs_proba(child, node_proba)
+            if node_proba == -1:
+                return -1
+        
+        return node_proba
+
+
+    
+    sum = dfs_sum(root)
+    p = random.random()
+    x = dfs_proba(root, 0)
+    assert x == -1
+
+def create_rd_formula(n, size):
+
+    if size == 1:
+        x = random.randint(0, n-1)
+        return Node(x)
+    
+    if size == 2:
+        node = Node("not")
+        x = random.randint(0, n-1)
+        node.add_child(Node(x))
+        return node
+    
+    left = random.randint(1, size-2)
+    right = size - 1 - left
+
+    node_left = create_rd_formula(n, left)
+    node_right = create_rd_formula(n, right)
+
+    gate = random.choice(gates[2])
+    node = Node(gate)
+    node.add_child(node_left)
+    node.add_child(node_right)
+
+    return node
+
+def create_rd_instance(n, size, nb_examples):
+    assert nb_examples <= 2**n
+    instance = []
+    formula = create_rd_formula(n, size)
+    l_input = []
+    input = [0 for i in range(n)]
+    for i in range(2**n-1):
+        input = input.copy()
+        l_input.append(input)
+        j = 0
+        while input[j] == 1:
+            input[j] = 0
+            j += 1
+        input[j] = 1
+    l_input.append(input)
+    print(l_input)
     for i in range(nb_examples):
-        l_i = []
-        for j in range(n):
-            x = random.getrandbits(1)
-            l_i.append(x)
-        y = random.getrandbits(1)
-        l.append((l_i, y))
-    return l
+        n_input = random.randint(0, 2**n-1-i)
+        input = l_input.pop(n_input)
+        y = calcul(formula, input)
+        instance.append((input, y))
 
-def create_rd_program(n, activate_not = True):
-    assert n >= 2
-    if n == 2:
-        x = random.getrandbits(1)
-        node_x = Node(x)
-        root = node_x
-        leaves = [node_x, node_x]
-        if activate_not:
-            root_not = random.getrandbits(1)
-            child_not1 = random.getrandbits(1)
-            child_not2 = random.getrandbits(1)
-            if root_not:
-                root = Node(2)
-                root.add_child(node_x)
-
-            if child_not1:
-                child1 = Node(2)
-                node_x.add_child(child1)
-                leaves[0] = child1
-            if child_not2:
-                child2 = Node(2)
-                node_x.add_child(child2)
-                leaves[1] = child2
-        return root, leaves
-
-    # n != 2:         
-    q, r = divmod(n, 2)
-    p, leaves = create_rd_program(q + r, activate_not)
-
-    new_leaves = []
-    for i in range(q):
-        x = random.getrandbits(1)
-        node_x = Node(x)
-        leaves[i].add_child(node_x)
-        children_x = [node_x, node_x]
-        if activate_not:
-            child_not1 = random.getrandbits(1)
-            child_not2 = random.getrandbits(1)
-            if child_not1:
-                child1 = Node(2)
-                node_x.add_child(child1)
-                children_x[0] = child1
-            if child_not2:
-                child2 = Node(2)
-                node_x.add_child(child2)
-                children_x[1] = child2
-        new_leaves = new_leaves + children_x
-
-    if r == 1:
-        new_leaves.append(leaves[q])
-
-    return p, new_leaves
-
-def create_tree(n, not_everywhere = False, not_on_leaves = True):
-    flag = not not_everywhere and not_on_leaves
-    p, leaves = create_rd_program(n, activate_not = not_everywhere)
-    i=0
-    for node in leaves:
-        branch = node
-        if flag:
-            x = random.getrandbits(1)
-            if x:
-                branch = Node(2)
-                node.add_child(branch)
-        branch.add_child(Node(i))
-        i+=1
-
-    return p
+    return instance, formula
 
 def calcul(root, input):
     n = len(root.children)
@@ -113,78 +146,67 @@ def calcul(root, input):
     if n == 0:
         return input[root.value]
     if n == 1:
-        assert root.value == 2 or root.value == 3
+        assert root.value in gates[1]
         child = root.children[0]
-        if root.value == 2:
+        if root.value == "not":
             return 1-calcul(child, input)
-        if root.value == 3:
+        if root.value == "id":
             return calcul(child, input)
     if n == 2:
         child1 = root.children[0]
         child2 = root.children[1]
-        assert root.value == 1 or root.value == 0
-        if root.value == 1:
+        assert root.value in gates[2]
+        if root.value == "or":
             return calcul(child1, input) or calcul(child2, input)
-        if root.value == 0:
+        if root.value == "and":
             return calcul(child1, input) and calcul(child2, input)
 
-def create_score_tree(p, instance):
-    score = score_program(p, instance)
-    l_max_score = []
-
-    def calcul_score(node):
-        value = node.value
-        if value in [0, 1]:
-            node.value = 1 - value
-            new_score = score_program(p, instance)
-        if value in [2, 3]:
-            node.value = 5 - value
-            new_score = score_program(p, instance)
-        node.value = value
-        return new_score
-
-    def dfs(node, new_parent, max_score):
-        if node.children == []:
-            new_parent.add_child(node.copy())
-            return max_score
-        else:
-            score = calcul_score(node)
-            new_node = Node(score)
-            new_parent.add_child(new_node)
-            new_max_score = max(max_score, score)
-            for child in node.children:
-                dfs(child, new_node)
-
-    max_score = calcul_score(p)
-    root = Node(max_score)
-    l_max_score.append(root)
-    for child in p.children:
-        max_score = dfs(child, root, max_score)
-
-    return root, l_max_score
-
-def score_program(p, instance):
+def score_formula(f, instance):
     score = 0
     n = len(instance)
     for input, y in instance:
-        result = calcul(p, input)
+        result = calcul(f, input)
         if result == y:
             score += 1
     return score / n
 
-def performance_program(p, instance):
+def performance_formula(f, instance):
     for input, y in instance:
-        result = calcul(p, input)
+        result = calcul(f, input)
         print("obtenu : ", result, " attendu : ", y)
-    print(score_program(p, instance))
+    print(score_formula(f, instance))
 
-def test(n, m):
-    instance = create_rd_instance(n, m)
-    root = create_tree(n)
-    root.print(operator=True)
-    score_tree = create_score_tree(root, instance)
-    print(instance)
-    performance_program(root, instance)
-    score_tree.print()
+def evolution(f, instance, tau = 5, N = 10):
+    score = 0
+    for i in range(N):
+        score = score_formula(f, instance)
+        print(score)
+        if score > 0.99:
+            return score
+        f.update_tree_score(instance)
+        softmax(f, tau)
+    return score
 
-test(20, 10)
+def progressive_evolution(f, instance, N, tau_max=10):
+    score = 0
+    tau = 1
+    # (tau_max - tau)/step + 1 = N / 10
+    step = 10*(tau_max - tau)/(N-10)
+    for i in range(N//10):
+        score = evolution(f, instance, tau)
+        if score > 0.99:
+            return score
+        tau += step
+
+    return score
+
+def test(n, size):
+    node = create_rd_formula(n, size)
+    instance, goal = create_rd_instance(n, size, 2**(n-1))
+    score = progressive_evolution(node, instance, 1000)
+    goal.print()
+    node.print()
+    node.print_score()
+    print(score)
+
+test(5, 15)
