@@ -106,9 +106,9 @@ class FormulaNode:
         self.op = op
         self.children = children
 
-    def eval(self, inputs):
-        eval_children = [c.eval(inputs) for c in self.children]
-        return self.op(inputs, *eval_children)
+    def eval(self, inputs, n_bits):
+        eval_children = [c.eval(inputs, n_bits) for c in self.children]
+        return self.op(n_bits, inputs, *eval_children)
 
     def to_string(self, prefix="", last=True) -> str:
         r = prefix + ("└── " if last else "├── ") + self.name + "\n"
@@ -121,10 +121,10 @@ class FormulaNode:
 
 
 # vars = {i: (lambda inputs, *children: print(len(inputs), i) or inputs[i]) for i in range(10)}
-unary = {"not": lambda inputs, *children: ~children[0]}
+unary = {"not": lambda n_bits, inputs, *children: (~children[0]) & ((1 << n_bits) - 1)}
 binary = {
-    "or": lambda inputs, *children: children[0] | children[1],
-    "and": lambda inputs, *children: children[0] & children[1],
+    "or": lambda n_bits, inputs, *children: children[0] | children[1],
+    "and": lambda n_bits, inputs, *children: children[0] & children[1],
 }
 
 
@@ -132,7 +132,7 @@ def random_formula(size: int, n_vars: int):
     if size == 1:
         i = random.randrange(n_vars)
 
-        def v(inputs, *children):
+        def v(n_bits, inputs, *children):
             return inputs[i]
 
         n = FormulaNode(f"x_{i}", v)
@@ -156,7 +156,7 @@ def gen_examples(f: FormulaNode, n_bits: int, n_vars: int, n_examples: int) -> T
     task = []
     for _ in range(n_examples):
         inputs = [random.randint(0, ub) for _ in range(n_vars)]
-        output = f.eval(inputs)
+        output = f.eval(inputs, n_bits)
         task.append((inputs, output))
     return task
 
@@ -173,8 +173,8 @@ if __name__ == "__main__":
     #     n_vars=2,
     # )
 
-    N_BITS = 16
-    N_VARS = 8
+    N_BITS = 3
+    N_VARS = 5
     N_EXAMPLES = 200
     F_SIZE = 15
     f = random_formula(F_SIZE, N_VARS)
