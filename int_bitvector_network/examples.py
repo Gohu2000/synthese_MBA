@@ -1,5 +1,5 @@
-from bitvector_tools import*
-from init_functions import*
+from init_functions import create_rd_formula, derive_instance, instance_to_seed, recreate_formula
+from bitvector_tools import seed_to_instance
 import os
 
 default_params = [(5, 15, 16, 5) for i in range(10)]
@@ -53,7 +53,7 @@ def print_example(filename, formula, instance, tau = default_tau, num_input=0):
     nb_bits = instance[0]
     nb_vars = len(instance[1][0])
 
-    x = formula.calcul(instance[num_input+1][0], nb_bits)
+    formula.calcul(instance[num_input+1][0], nb_bits)
     value = formula.image()
     score = formula.image("score")
     proba = formula.image("proba")

@@ -1,6 +1,5 @@
 from node import Node, GATES
-from bitvector_tools import*
-import numpy as np
+from bitvector_tools import hamming_weight, bit_not, calcul_gate, shift
 
 class InfluenceTargetScoreNode(Node):
     def __init__(self, value = None):
@@ -26,7 +25,7 @@ class InfluenceTargetScoreNode(Node):
         self.init_score(n, nb_bits)
         for input, y in instance[1:]:
             self.target = y
-            result = self.calcul(input, nb_bits)
+            self.calcul(input, nb_bits)
             self.update_influence_target(nb_bits)
             self.update_score(input, y, nb_bits)
         self.finish_score(nb_input*nb_bits)
@@ -93,8 +92,6 @@ class InfluenceTargetScoreNode(Node):
         if arity == 2:
             child1 = self.children[0]
             child2 = self.children[1]
-            mask1 = [1 for i in range(nb_bits)]
-            mask2 = [1 for i in range(nb_bits)]
             assert self.value in GATES[2]
             if self.value == "or":
                 child1.influence = bit_not(child2.result, nb_bits) & self.influence
@@ -115,18 +112,3 @@ class InfluenceTargetScoreNode(Node):
             child1.update_influence_target(nb_bits)
             child2.update_influence_target(nb_bits)
 
-    def new_update_tree_score(self, instance):
-        nb_bits = instance[0]
-        n = len(instance[1][0])
-        self.new_influence = np.eye(nb_bits)
-        nb_input = len(instance) - 1
-        self.init_score(n, nb_bits)
-        for input, y in instance[1:]:
-            self.target = y
-            result = self.calcul(input, nb_bits)
-            self.update_influence_target(nb_bits)
-            self.update_score(input, y, nb_bits)
-        self.finish_score(nb_input*nb_bits)
-
-    def test_new_influence(self):
-        

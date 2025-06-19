@@ -1,4 +1,4 @@
-from bitvector_tools import*
+from bitvector_tools import calcul_gate
 GATES = {1: ["id", "not", "<<", ">>"], 2: ["and", "or", "xor"]}
 
 class Node:
@@ -11,7 +11,7 @@ class Node:
         self.result = None
 
     def add_child(self, child):
-        assert child.parent == None
+        assert child.parent is None
         self.children.append(child)
         child.parent = self
 
