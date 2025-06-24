@@ -1,6 +1,15 @@
+use std::{
+    fmt::{Debug, Display},
+    num::NonZeroUsize,
+};
+
 use rand::Rng;
 
-use crate::formula::{binary::BinaryOp, grad::Grad, unary::UnaryOp};
+use crate::formula::{
+    binary::BinaryOp,
+    grad::{Deltas, Grad},
+    unary::UnaryOp,
+};
 
 mod binary;
 mod grad;
@@ -8,7 +17,8 @@ mod unary;
 
 #[derive(Debug)]
 pub struct Node {
-    id: usize,
+    /// Nodes have non-zero indices: this is makes navigating the tree easier.
+    id: NonZeroUsize,
     data: NodeContent,
     outputs: Option<Box<[u32]>>,
     grads: Option<Box<[Grad]>>,
@@ -41,7 +51,7 @@ impl NodeContent {
                 let left_out = left.forward(inputs);
                 let right_out = right.forward(inputs);
                 left_out
-                    .into_iter()
+                    .iter()
                     .zip(right_out)
                     .map(|(x, y)| op.apply(*x, *y))
                     .collect()
@@ -81,12 +91,45 @@ impl NodeContent {
             }
         }
     }
+
+    fn walk(&mut self, m: Move, moves: Vec<Move>) -> &mut Node {
+        match self {
+            NodeContent::Input(_) => unreachable!(),
+            NodeContent::UnaryNode { child, .. } => {
+                assert_eq!(m, Move::Left);
+                child.walk(moves)
+            }
+            NodeContent::BinaryNode { left, right, .. } => match m {
+                Move::Left => left.walk(moves),
+                Move::Right => right.walk(moves),
+            },
+        }
+    }
+
+    fn set_op(&mut self, op: Op) {
+        match (self, op) {
+            (NodeContent::UnaryNode { op, .. }, Op::Unary(unary_op)) => *op = unary_op,
+            (NodeContent::BinaryNode { op, .. }, Op::Binary(binary_op)) => *op = binary_op,
+            (s, op) => panic!("Invalid pair of (NodeContent, op): '{s:?}', '{op:?}'"),
+        }
+    }
+
+    fn compute_deltas(&self, grads: &[Grad], outputs: &[u32]) -> Deltas {
+        match self {
+            NodeContent::Input(i) => todo!(),
+            NodeContent::UnaryNode { op, child } => todo!(),
+            NodeContent::BinaryNode { op, left, right } => todo!(),
+        }
+    }
 }
 
 impl Node {
-    fn new(id: usize, data: NodeContent) -> Self {
+    fn new<T: TryInto<NonZeroUsize>>(id: T, data: NodeContent) -> Self
+    where
+        T::Error: Debug,
+    {
         Self {
-            id,
+            id: id.try_into().expect("Expected non-zero id"),
             data,
             outputs: None,
             grads: None,
@@ -110,7 +153,7 @@ impl Node {
         } else {
             let is_unary = rng.random_bool(0.25) || size == 2; // TODO: change proba ?
             if is_unary {
-                let child = Self::random(n_inputs, size - 1, id + 1, rng);
+                let child = Self::random(n_inputs, size - 1, 2 * id, rng);
                 let data = NodeContent::UnaryNode {
                     op: rng.random(),
                     child: Box::from(child),
@@ -118,9 +161,9 @@ impl Node {
                 Node::new(id, data)
             } else {
                 let left_size = rng.random_range(1..=(size - 2));
-                let left_child = Self::random(n_inputs, left_size, 2 * id + 1, rng);
+                let left_child = Self::random(n_inputs, left_size, 2 * id, rng);
                 let right_size = size - 1 - left_size;
-                let right_child = Self::random(n_inputs, right_size, 2 * id + 2, rng);
+                let right_child = Self::random(n_inputs, right_size, 2 * id + 1, rng);
                 let data = NodeContent::BinaryNode {
                     op: rng.random(),
                     left: Box::from(left_child),
@@ -129,5 +172,67 @@ impl Node {
                 Node::new(id, data)
             }
         }
+    }
+
+    fn find_gate(&mut self, id: usize) -> &mut Self {
+        let moves = moves_for_id(id);
+        self.walk(moves)
+    }
+
+    fn walk(&mut self, mut moves: Vec<Move>) -> &mut Self {
+        if let Some(m) = moves.pop() {
+            self.data.walk(m, moves)
+        } else {
+            self
+        }
+    }
+
+    pub fn update_gate(&mut self, id: usize, op: Op) {
+        let gate = self.find_gate(id);
+        assert_eq!(gate.id.get(), id);
+        gate.data.set_op(op);
+    }
+
+    fn compute_deltas(&self) -> Deltas {
+        self.data
+            .compute_deltas(self.grads.as_ref().unwrap(), self.outputs.as_ref().unwrap())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Op {
+    Unary(UnaryOp),
+    Binary(BinaryOp),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Move {
+    Left,
+    Right,
+}
+
+fn moves_for_id(mut id: usize) -> Vec<Move> {
+    assert!(id > 0, "Node ids are non-zero integers");
+    let mut moves = vec![];
+    while id > 1 {
+        moves.push(if id & 1 == 0 { Move::Left } else { Move::Right });
+        id >>= 1;
+    }
+    moves
+}
+
+impl Display for NodeContent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NodeContent::Input(i) => write!(f, "x_{i}"),
+            NodeContent::UnaryNode { op, child } => write!(f, "({child}) {op}"),
+            NodeContent::BinaryNode { op, left, right } => write!(f, "({left}) {op} ({right})"),
+        }
+    }
+}
+
+impl Display for Node {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.data)
     }
 }

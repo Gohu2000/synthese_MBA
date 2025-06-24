@@ -1,4 +1,7 @@
-use std::ops::{BitAnd, BitOr, BitXor, Not};
+use std::{
+    fmt::Display,
+    ops::{BitAnd, BitOr, BitXor, Not},
+};
 
 use rand::{
     distr::{Distribution, StandardUniform},
@@ -7,7 +10,7 @@ use rand::{
 
 use super::grad::Grad;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BinaryOp {
     And,
     Or,
@@ -54,6 +57,16 @@ impl BinaryOp {
                 influence,
                 target: target.bitxor(y),
             },
+        }
+    }
+}
+
+impl Display for BinaryOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BinaryOp::And => write!(f, "&"),
+            BinaryOp::Or => write!(f, "|"),
+            BinaryOp::Xor => write!(f, "^"),
         }
     }
 }
