@@ -27,12 +27,12 @@ impl UnaryOp {
                 target: target.not(),
             },
             UnaryOp::LeftShift(i) => Grad {
-                influence: influence.unbounded_shl(*i),
-                target: target.unbounded_shl(*i),
-            },
-            UnaryOp::RightShift(i) => Grad {
                 influence: influence.unbounded_shr(*i),
                 target: target.unbounded_shr(*i),
+            },
+            UnaryOp::RightShift(i) => Grad {
+                influence: influence.unbounded_shl(*i),
+                target: target.unbounded_shl(*i),
             },
         }
     }
