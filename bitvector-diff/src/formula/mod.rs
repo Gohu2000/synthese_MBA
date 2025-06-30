@@ -1,6 +1,5 @@
 use std::{
-    fmt::{Debug, Display},
-    num::NonZeroUsize,
+    collections::HashMap, fmt::{Debug, Display}, num::NonZeroUsize, ops::{BitAnd, BitXor, Not}
 };
 
 use rand::Rng;
@@ -42,7 +41,7 @@ enum NodeContent {
 impl NodeContent {
     pub fn forward(&mut self, inputs: &[&[u32]]) -> Box<[u32]> {
         match self {
-            NodeContent::Input(i) => inputs[*i].iter().copied().collect(),
+            NodeContent::Input(i) => inputs.iter().copied().map(|input| input[*i]).collect(),
             NodeContent::UnaryNode { op, child } => {
                 let child_out = child.forward(inputs);
                 child_out.iter().map(|x| op.apply(*x)).collect()
@@ -114,11 +113,52 @@ impl NodeContent {
         }
     }
 
-    fn compute_deltas(&self, grads: &[Grad], outputs: &[u32]) -> Deltas {
+    fn compute_deltas(&mut self, grads: &[Grad], outputs: &[u32], inputs: &[&[u32]]) -> Deltas {
+        let p = |mut n: u32| {
+            let mut result = 0;
+            while n > 0 {result += 1;n &= n-1}
+            result
+        };
+        let psi = |output: u32, Grad {influence, target}| {
+            p((output.bitxor(target)).not().bitand(influence))
+        };
         match self {
-            NodeContent::Input(i) => todo!(),
-            NodeContent::UnaryNode { op, child } => todo!(),
-            NodeContent::BinaryNode { op, left, right } => todo!(),
+            NodeContent::Input(i) => {
+                let n_inputs = inputs[0].len();
+                let mut hashmap = HashMap::new();
+                for j in 0..n_inputs {
+                    if j != *i {
+                        let v= inputs.iter().copied().enumerate().map(|(k, input)| {
+                            psi(input[j], grads[k]) - psi(outputs[k], grads[k])
+                        }).sum();
+                        hashmap.insert(j, v);
+                    }
+                }
+                Deltas::Input(hashmap)
+            },
+            NodeContent::UnaryNode { op, child } => {
+                let child_out = child.forward(inputs);
+                let mut hashmap = HashMap::new();
+                for new_op in op.into_iter() {
+                    let v = child_out.iter().enumerate().map(|(k, x)| {
+                        psi(new_op.apply(*x), grads[k]) - psi(outputs[k], grads[k])
+                    }).sum();
+                    hashmap.insert(new_op, v);
+                }
+                Deltas::Unary(hashmap)
+            },
+            NodeContent::BinaryNode { op, left, right } => {
+                let left_out = left.forward(inputs);
+                let right_out = right.forward(inputs);
+                let mut hashmap = HashMap::new();
+                for new_op in op.into_iter() {
+                    let v = left_out.iter().enumerate().map(|(k, x)| {
+                        psi(new_op.apply(*x, right_out[k]), grads[k]) - psi(outputs[k], grads[k])
+                    }).sum();
+                    hashmap.insert(new_op, v);
+                }
+                Deltas::Binary(hashmap)
+            },
         }
     }
 }
@@ -193,9 +233,9 @@ impl Node {
         gate.data.set_op(op);
     }
 
-    fn compute_deltas(&self) -> Deltas {
+    fn compute_deltas(&mut self, inputs: &[&[u32]]) -> Deltas {
         self.data
-            .compute_deltas(self.grads.as_ref().unwrap(), self.outputs.as_ref().unwrap())
+            .compute_deltas(self.grads.as_ref().unwrap(), self.outputs.as_ref().unwrap(), inputs)
     }
 }
 
