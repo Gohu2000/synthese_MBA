@@ -31,11 +31,12 @@ impl Scores {
             sum += id_sum;
         };
          let mut rng = rng();
-         let p: f32 = rng.random();
+         let mut p: f32 = rng.random();
         for (id, delta) in &self.values {
             let id_sum = *hashmapsum.get(id).unwrap();
-            if p <= id_sum / sum {
-                return (*id, delta.get_op(p, |v| {f(v)/sum}))
+            p -= id_sum / sum;
+            if p <= 0. {
+                return (*id, delta.get_op(p + id_sum / sum, |v| {f(v)/sum}))
             }
         }
         unreachable!()
@@ -75,11 +76,12 @@ impl Deltas {
         }
     }
 
-    fn get_op(&self, p:f32, f: impl Fn(f32) -> f32) -> Op {
+    fn get_op(&self, mut p:f32, f: impl Fn(f32) -> f32) -> Op {
         match self {
             Deltas::Input(h) => {
                 for (op, v) in h {
-                    if p <= f(*v) {
+                    p -= f(*v);
+                    if p <= 0. {
                         return Op::Input(*op)
                     }
                 }
@@ -87,7 +89,8 @@ impl Deltas {
             },
             Deltas::Unary(h) => {
                 for (op, v) in h {
-                    if p <= f(*v) {
+                    p -= f(*v);
+                    if p <= 0. {
                         return Op::Unary(*op)
                     }
                 }
@@ -95,7 +98,8 @@ impl Deltas {
             },
             Deltas::Binary(h) => {
                 for (op, v) in h {
-                    if p <= f(*v) {
+                    p -= f(*v);
+                    if p <= 0. {
                         return Op::Binary(*op)
                     }
                 }

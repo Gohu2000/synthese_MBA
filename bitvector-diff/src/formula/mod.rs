@@ -321,7 +321,6 @@ impl Node {
         let mut scores = Scores::new();
         self.compute_scores(inputs, &mut scores);
         scores
-
     }
 }
 
