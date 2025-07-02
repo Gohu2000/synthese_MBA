@@ -1,20 +1,13 @@
-use bitvector_diff::formula::Node;
+use bitvector_diff::solving::{Benchmark, Solver};
 use rand::rng;
 
-fn main() {
-    let b= 32f32;
-    let (raw_n, raw_m, raw_tau): (u16, u16, f32) = (32, 5, 20.0);
-    let (n, m) = (usize::from(raw_n), usize::from(raw_m));
-    let tau = raw_tau/(f32::from(raw_n)*b);
 
+fn main() {
+    let params = (5, 32, 15); // (n_inputs, n_examples, size)
     let mut rng = rng();
-    let mut f = Node::random(m, 8, 1, &mut rng);
-    let (inputs, outputs) = f.to_instance(m, n, &mut rng);
-    let mut g = Node::random(m, 8, 1, &mut rng);
-    let scores = g.get_scores(inputs.as_slice(), &outputs);
-    let (id, op) = scores.softmax(tau);
-    println!("{f:}");
-    println!("{g:}");
-    g.update_gate(id, op);
-    println!("{g:}");
+    let benchmark = Benchmark::new(params, &mut rng, 100);
+    benchmark.to_file("benchmark.txt");
+    let benchmark = Benchmark::from_file("benchmark.txt");
+    let solver = Solver::Algonaif;
+    benchmark.solve_print(solver, &mut rng, params)
 }

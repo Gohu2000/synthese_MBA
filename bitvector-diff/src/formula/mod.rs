@@ -7,15 +7,17 @@ use std::{
 
 use rand::Rng;
 
-use crate::formula::{
+use crate::{formula::{
     binary::BinaryOp,
     grad::{Deltas, Grad, Scores},
     unary::UnaryOp,
-};
+}, solving::Instance};
 
 mod binary;
-mod grad;
+pub mod grad;
 mod unary;
+
+use conv::ValueFrom;
 
 #[derive(Debug)]
 pub struct Node {
@@ -107,16 +109,16 @@ impl NodeContent {
         }
     }
 
-    fn walk(&mut self, m: Move, moves: Vec<Move>) -> &mut Node {
+    fn _walk(&mut self, m: Move, moves: Vec<Move>) -> &mut Node {
         match self {
             NodeContent::Input(_) => unreachable!(),
             NodeContent::UnaryNode { child, .. } => {
                 assert_eq!(m, Move::Left);
-                child.walk(moves)
+                child._walk(moves)
             }
             NodeContent::BinaryNode { left, right, .. } => match m {
-                Move::Left => left.walk(moves),
-                Move::Right => right.walk(moves),
+                Move::Left => left._walk(moves),
+                Move::Right => right._walk(moves),
             },
         }
     }
@@ -144,14 +146,14 @@ impl NodeContent {
         }
     }
 
-    fn compute_deltas(&mut self, grads: &[Grad], outputs: &[u32], inputs: &[Vec<u32>]) -> Deltas {
+    fn compute_deltas(&mut self, grads: &[Grad], outputs: &[u32], inputs: &[Vec<u32>], n_examples: usize) -> Deltas {
         let p = |mut n: u32| {
             let mut result = 0f32;
             while n > 0 {result = result + 1f32;n &= n-1}
             result
         };
         let psi = |output: u32, Grad {influence, target}| {
-            p((output.bitxor(target)).not().bitand(influence))
+            p((output.bitxor(target)).not().bitand(influence))/(32.*f32::value_from(n_examples).unwrap())
         };
         match self {
             NodeContent::Input(i) => {
@@ -159,7 +161,7 @@ impl NodeContent {
                 let mut hashmap = HashMap::new();
                 for j in 0..n_inputs {
                     if j != *i {
-                        let v= inputs.iter().enumerate().map(|(k, input)| {
+                        let v:f32 = inputs.iter().enumerate().map(|(k, input)| {
                             psi(input[j], grads[k]) - psi(outputs[k], grads[k])
                         }).sum();
                         hashmap.insert(j, v);
@@ -193,15 +195,15 @@ impl NodeContent {
         }
     }
 
-    fn compute_scores(&mut self, inputs: &[Vec<u32>], scores: &mut Scores) {
+    fn compute_scores(&mut self, inputs: &[Vec<u32>], scores: &mut Scores, n_examples: usize) {
         match self {
             NodeContent::Input(_) => (),
             NodeContent::UnaryNode { child, .. } => {
-                child.compute_scores(inputs, scores)
+                child.compute_scores(inputs, scores, n_examples)
             }
             NodeContent::BinaryNode { left, right, .. } => {
-                left.compute_scores(inputs, scores);
-                right.compute_scores(inputs, scores);
+                left.compute_scores(inputs, scores, n_examples);
+                right.compute_scores(inputs, scores, n_examples);
             },
         }
     }
@@ -265,7 +267,7 @@ impl Node {
 
     pub fn to_instance(&mut self, n_inputs: usize, n_examples: usize, rng: &mut impl Rng) -> (Vec<Vec<u32>>, Box<[u32]>) {
         let mut vec = Vec::new();
-        for i in 0..n_examples {
+        for _ in 0..n_examples {
             let x: Vec<u32> = (0..n_inputs).map(|_| rng.random()).collect();
             vec.push(x);
         };
@@ -273,14 +275,14 @@ impl Node {
         (vec, outputs)
     }
 
-    fn find_gate(&mut self, id: usize) -> &mut Self {
+    fn _find_gate(&mut self, id: usize) -> &mut Self {
         let moves = moves_for_id(id);
-        self.walk(moves)
+        self._walk(moves)
     }
 
-    fn walk(&mut self, mut moves: Vec<Move>) -> &mut Self {
+    fn _walk(&mut self, mut moves: Vec<Move>) -> &mut Self {
         if let Some(m) = moves.pop() {
-            self.data.walk(m, moves)
+            self.data._walk(m, moves)
         } else {
             self
         }
@@ -304,23 +306,42 @@ impl Node {
         self.clear_backward();
     }
 
-    fn compute_deltas(&mut self, inputs: &[Vec<u32>]) -> Deltas {
+    fn compute_deltas(&mut self, inputs: &[Vec<u32>], n_examples: usize) -> Deltas {
         self.data
-            .compute_deltas(self.grads.as_ref().unwrap(), self.outputs.as_ref().unwrap(), inputs)
+            .compute_deltas(self.grads.as_ref().unwrap(), self.outputs.as_ref().unwrap(), inputs, n_examples)
     }
 
-    fn compute_scores(&mut self, inputs: &[Vec<u32>], scores: &mut Scores) {
-        scores.values.insert(self.id.into(), self.compute_deltas(inputs));
-        self.data.compute_scores(inputs, scores);
+    fn compute_scores(&mut self, inputs: &[Vec<u32>], scores: &mut Scores, n_examples: usize) {
+        scores.values.insert(self.id.into(), self.compute_deltas(inputs, n_examples));
+        self.data.compute_scores(inputs, scores, n_examples);
     }
 
-    pub fn get_scores(&mut self, inputs: &[Vec<u32>], outputs: &[u32]) -> Scores {
-        let init_grads = outputs.iter().copied().map(|y| Grad {influence: 0u32.not(), target: y}).collect();
+    pub fn get_scores(&mut self, instance: &Instance, n_examples: usize) -> Scores {
+        let inputs = instance.inputs.as_slice();
+        let targets = &instance.outputs;
+
+        let init_grads = targets.iter().copied().map(|y| Grad {influence: 0u32.not(), target: y}).collect();
         self.forward(inputs);
         self.backward(init_grads);
         let mut scores = Scores::new();
-        self.compute_scores(inputs, &mut scores);
+        self.compute_scores(inputs, &mut scores, n_examples);
         scores
+    }
+
+    pub fn current_score(&mut self, instance: &Instance, n_examples: usize) -> f32 {
+        let inputs = instance.inputs.as_slice();
+        let targets = &instance.outputs;
+
+        let p = |mut n: u32| {
+            let mut result = 0f32;
+            while n > 0 {result = result + 1f32;n &= n-1}
+            result
+        };
+        let outputs = self.forward(inputs);
+        let s: f32 = outputs.iter().zip(targets).map(|(x, y)| {
+                            p((x.bitxor(y)).not())
+                        }).sum();
+        s/(32.*f32::value_from(n_examples).unwrap())
     }
 }
 

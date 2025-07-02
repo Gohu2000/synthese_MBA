@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use fast_math::exp;
-use rand::{rng, Rng};
+use rand::Rng;
 
 use crate::formula::{binary::BinaryOp, unary::UnaryOp, Op};
 
@@ -13,6 +13,11 @@ pub struct Grad {
 pub struct Scores {
     pub values: HashMap<usize, Deltas>,
 }
+pub enum Deltas {
+    Input(HashMap<usize, f32>),
+    Unary(HashMap<UnaryOp, f32>),
+    Binary(HashMap<BinaryOp, f32>),
+}
 
 impl Scores {
     pub fn new() -> Self {
@@ -21,7 +26,7 @@ impl Scores {
         }
     }
 
-    pub fn softmax(&self, tau:f32) -> (usize, Op) {
+    pub fn softmax(&self, tau:f32, rng: &mut impl Rng) -> (usize, Op) {
         let f = |v: f32| {exp(tau*v)};
         let mut sum = 0f32;
         let mut hashmapsum = HashMap::new();
@@ -30,7 +35,6 @@ impl Scores {
             hashmapsum.insert(*id, id_sum);
             sum += id_sum;
         };
-         let mut rng = rng();
          let mut p: f32 = rng.random();
         for (id, delta) in &self.values {
             let id_sum = *hashmapsum.get(id).unwrap();
@@ -41,12 +45,6 @@ impl Scores {
         }
         unreachable!()
     }
-}
-
-pub enum Deltas {
-    Input(HashMap<usize, f32>),
-    Unary(HashMap<UnaryOp, f32>),
-    Binary(HashMap<BinaryOp, f32>),
 }
 
 impl Deltas {
