@@ -61,6 +61,18 @@ impl BinaryOp {
     }
 }
 
+impl IntoIterator for BinaryOp {
+    type Item = BinaryOp;
+    type IntoIter = BinaryOpIntoIterator;
+
+    fn into_iter(self) -> Self::IntoIter {
+        BinaryOpIntoIterator {
+            unwanted_op: self,
+            index: 0,
+        }
+    }
+}
+
 impl Display for BinaryOp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -77,5 +89,24 @@ impl Distribution<BinaryOp> for StandardUniform {
             .choose(rng)
             .copied()
             .unwrap()
+    }
+}
+pub struct BinaryOpIntoIterator {
+    unwanted_op: BinaryOp,
+    index: usize,
+}
+
+impl Iterator for BinaryOpIntoIterator {
+    type Item = BinaryOp;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let result = match self.index {
+            0 => BinaryOp::And,
+            1 => BinaryOp::Or,
+            2 => BinaryOp::Xor,
+            _ => return None
+        };
+        self.index += 1;
+        if result == self.unwanted_op {self.next()} else {Some(result)}
     }
 }

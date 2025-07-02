@@ -1,19 +1,23 @@
 use std::{
+    collections::HashMap,
     fmt::{Debug, Display},
     num::NonZeroUsize,
+    ops::{BitAnd, BitXor, Not}, vec
 };
 
 use rand::Rng;
 
-use crate::formula::{
+use crate::{formula::{
     binary::BinaryOp,
-    grad::{Deltas, Grad},
+    grad::{Deltas, Grad, Scores},
     unary::UnaryOp,
-};
+}, solving::Instance};
 
 mod binary;
-mod grad;
+pub mod grad;
 mod unary;
+
+use conv::ValueFrom;
 
 #[derive(Debug)]
 pub struct Node {
@@ -40,9 +44,9 @@ enum NodeContent {
 }
 
 impl NodeContent {
-    pub fn forward(&mut self, inputs: &[&[u32]]) -> Box<[u32]> {
+    pub fn forward(&mut self, inputs: &[Vec<u32>]) -> Box<[u32]> {
         match self {
-            NodeContent::Input(i) => inputs[*i].iter().copied().collect(),
+            NodeContent::Input(i) => inputs.iter().map(|input| input[*i]).collect(),
             NodeContent::UnaryNode { op, child } => {
                 let child_out = child.forward(inputs);
                 child_out.iter().map(|x| op.apply(*x)).collect()
@@ -92,33 +96,115 @@ impl NodeContent {
         }
     }
 
-    fn walk(&mut self, m: Move, moves: Vec<Move>) -> &mut Node {
+    pub fn clear_backward(&mut self) {
+        match self {
+            NodeContent::Input(_) => (),
+            NodeContent::UnaryNode { op:_ , child } => {
+                child.clear_backward();
+            }
+            NodeContent::BinaryNode { op:_ , left, right } => {
+                left.clear_backward();
+                right.clear_backward();
+            }
+        }
+    }
+
+    fn _walk(&mut self, m: Move, moves: Vec<Move>) -> &mut Node {
         match self {
             NodeContent::Input(_) => unreachable!(),
             NodeContent::UnaryNode { child, .. } => {
                 assert_eq!(m, Move::Left);
-                child.walk(moves)
+                child._walk(moves)
             }
             NodeContent::BinaryNode { left, right, .. } => match m {
-                Move::Left => left.walk(moves),
-                Move::Right => right.walk(moves),
+                Move::Left => left._walk(moves),
+                Move::Right => right._walk(moves),
+            },
+        }
+    }
+
+    fn walk_outputs(&mut self, m: Move, moves: Vec<Move>) -> &mut Node {
+        match self {
+            NodeContent::Input(_) => unreachable!(),
+            NodeContent::UnaryNode { child, .. } => {
+                assert_eq!(m, Move::Left);
+                child.walk_outputs(moves)
+            }
+            NodeContent::BinaryNode { left, right, .. } => match m {
+                Move::Left => left.walk_outputs(moves),
+                Move::Right => right.walk_outputs(moves),
             },
         }
     }
 
     fn set_op(&mut self, op: Op) {
         match (self, op) {
+            (NodeContent::Input(i), Op::Input(j)) => *i = j,
             (NodeContent::UnaryNode { op, .. }, Op::Unary(unary_op)) => *op = unary_op,
             (NodeContent::BinaryNode { op, .. }, Op::Binary(binary_op)) => *op = binary_op,
             (s, op) => panic!("Invalid pair of (NodeContent, op): '{s:?}', '{op:?}'"),
         }
     }
 
-    fn compute_deltas(&self, grads: &[Grad], outputs: &[u32]) -> Deltas {
+    fn compute_deltas(&mut self, grads: &[Grad], outputs: &[u32], inputs: &[Vec<u32>], n_examples: usize) -> Deltas {
+        let p = |mut n: u32| {
+            let mut result = 0f32;
+            while n > 0 {result = result + 1f32;n &= n-1}
+            result
+        };
+        let psi = |output: u32, Grad {influence, target}| {
+            p((output.bitxor(target)).not().bitand(influence))/(32.*f32::value_from(n_examples).unwrap())
+        };
         match self {
-            NodeContent::Input(i) => todo!(),
-            NodeContent::UnaryNode { op, child } => todo!(),
-            NodeContent::BinaryNode { op, left, right } => todo!(),
+            NodeContent::Input(i) => {
+                let n_inputs = inputs[0].len();
+                let mut hashmap = HashMap::new();
+                for j in 0..n_inputs {
+                    if j != *i {
+                        let v:f32 = inputs.iter().enumerate().map(|(k, input)| {
+                            psi(input[j], grads[k]) - psi(outputs[k], grads[k])
+                        }).sum();
+                        hashmap.insert(j, v);
+                    }
+                }
+                Deltas::Input(hashmap)
+            },
+            NodeContent::UnaryNode { op, child } => {
+                let child_out = child.forward(inputs);
+                let mut hashmap = HashMap::new();
+                for new_op in op.into_iter() {
+                    let v = child_out.iter().enumerate().map(|(k, x)| {
+                        psi(new_op.apply(*x), grads[k]) - psi(outputs[k], grads[k])
+                    }).sum();
+                    hashmap.insert(new_op, v);
+                }
+                Deltas::Unary(hashmap)
+            },
+            NodeContent::BinaryNode { op, left, right } => {
+                let left_out = left.forward(inputs);
+                let right_out = right.forward(inputs);
+                let mut hashmap = HashMap::new();
+                for new_op in op.into_iter() {
+                    let v = left_out.iter().enumerate().map(|(k, x)| {
+                        psi(new_op.apply(*x, right_out[k]), grads[k]) - psi(outputs[k], grads[k])
+                    }).sum();
+                    hashmap.insert(new_op, v);
+                }
+                Deltas::Binary(hashmap)
+            },
+        }
+    }
+
+    fn compute_scores(&mut self, inputs: &[Vec<u32>], scores: &mut Scores, n_examples: usize) {
+        match self {
+            NodeContent::Input(_) => (),
+            NodeContent::UnaryNode { child, .. } => {
+                child.compute_scores(inputs, scores, n_examples)
+            }
+            NodeContent::BinaryNode { left, right, .. } => {
+                left.compute_scores(inputs, scores, n_examples);
+                right.compute_scores(inputs, scores, n_examples);
+            },
         }
     }
 }
@@ -135,7 +221,7 @@ impl Node {
             grads: None,
         }
     }
-    pub fn forward<'s, 'i>(&'s mut self, inputs: &'i [&'i [u32]]) -> &'s [u32] {
+    pub fn forward<'s, 'i>(&'s mut self, inputs: &'i [Vec<u32>]) -> &'s [u32] {
         self.outputs
             .get_or_insert_with(|| self.data.forward(inputs))
     }
@@ -145,6 +231,11 @@ impl Node {
             self.data.backward(&grads);
             grads
         });
+    }
+
+    pub fn clear_backward(&mut self) {
+        self.grads = None;
+        self.data.clear_backward()
     }
 
     pub fn random(n_inputs: usize, size: usize, id: usize, rng: &mut impl Rng) -> Self {
@@ -174,33 +265,89 @@ impl Node {
         }
     }
 
-    fn find_gate(&mut self, id: usize) -> &mut Self {
-        let moves = moves_for_id(id);
-        self.walk(moves)
+    pub fn to_instance(&mut self, n_inputs: usize, n_examples: usize, rng: &mut impl Rng) -> (Vec<Vec<u32>>, Box<[u32]>) {
+        let mut vec = Vec::new();
+        for _ in 0..n_examples {
+            let x: Vec<u32> = (0..n_inputs).map(|_| rng.random()).collect();
+            vec.push(x);
+        };
+        let outputs = self.data.forward(vec.as_slice());
+        (vec, outputs)
     }
 
-    fn walk(&mut self, mut moves: Vec<Move>) -> &mut Self {
+    fn _find_gate(&mut self, id: usize) -> &mut Self {
+        let moves = moves_for_id(id);
+        self._walk(moves)
+    }
+
+    fn _walk(&mut self, mut moves: Vec<Move>) -> &mut Self {
         if let Some(m) = moves.pop() {
-            self.data.walk(m, moves)
+            self.data._walk(m, moves)
+        } else {
+            self
+        }
+    }
+
+    fn walk_outputs(&mut self, mut moves: Vec<Move>) -> &mut Self {
+        // effectue la même chose que walk en retirant les valeurs des outputs sur son passage
+        self.outputs = None;
+        if let Some(m) = moves.pop() {
+            self.data.walk_outputs(m, moves)
         } else {
             self
         }
     }
 
     pub fn update_gate(&mut self, id: usize, op: Op) {
-        let gate = self.find_gate(id);
+        let moves = moves_for_id(id);
+        let gate = self.walk_outputs(moves);
         assert_eq!(gate.id.get(), id);
         gate.data.set_op(op);
+        self.clear_backward();
     }
 
-    fn compute_deltas(&self) -> Deltas {
+    fn compute_deltas(&mut self, inputs: &[Vec<u32>], n_examples: usize) -> Deltas {
         self.data
-            .compute_deltas(self.grads.as_ref().unwrap(), self.outputs.as_ref().unwrap())
+            .compute_deltas(self.grads.as_ref().unwrap(), self.outputs.as_ref().unwrap(), inputs, n_examples)
+    }
+
+    fn compute_scores(&mut self, inputs: &[Vec<u32>], scores: &mut Scores, n_examples: usize) {
+        scores.values.insert(self.id.into(), self.compute_deltas(inputs, n_examples));
+        self.data.compute_scores(inputs, scores, n_examples);
+    }
+
+    pub fn get_scores(&mut self, instance: &Instance, n_examples: usize) -> Scores {
+        let inputs = instance.inputs.as_slice();
+        let targets = &instance.outputs;
+
+        let init_grads = targets.iter().copied().map(|y| Grad {influence: 0u32.not(), target: y}).collect();
+        self.forward(inputs);
+        self.backward(init_grads);
+        let mut scores = Scores::new();
+        self.compute_scores(inputs, &mut scores, n_examples);
+        scores
+    }
+
+    pub fn current_score(&mut self, instance: &Instance, n_examples: usize) -> f32 {
+        let inputs = instance.inputs.as_slice();
+        let targets = &instance.outputs;
+
+        let p = |mut n: u32| {
+            let mut result = 0f32;
+            while n > 0 {result = result + 1f32;n &= n-1}
+            result
+        };
+        let outputs = self.forward(inputs);
+        let s: f32 = outputs.iter().zip(targets).map(|(x, y)| {
+                            p((x.bitxor(y)).not())
+                        }).sum();
+        s/(32.*f32::value_from(n_examples).unwrap())
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Op {
+    Input(usize),
     Unary(UnaryOp),
     Binary(BinaryOp),
 }

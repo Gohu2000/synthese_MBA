@@ -27,12 +27,12 @@ impl UnaryOp {
                 target: target.not(),
             },
             UnaryOp::LeftShift(i) => Grad {
-                influence: influence.unbounded_shl(*i),
-                target: target.unbounded_shl(*i),
-            },
-            UnaryOp::RightShift(i) => Grad {
                 influence: influence.unbounded_shr(*i),
                 target: target.unbounded_shr(*i),
+            },
+            UnaryOp::RightShift(i) => Grad {
+                influence: influence.unbounded_shl(*i),
+                target: target.unbounded_shl(*i),
             },
         }
     }
@@ -48,6 +48,18 @@ impl Display for UnaryOp {
     }
 }
 
+impl IntoIterator for UnaryOp {
+    type Item = UnaryOp;
+    type IntoIter = UnaryOpIntoIterator;
+
+    fn into_iter(self) -> Self::IntoIter {
+        UnaryOpIntoIterator {
+            unwanted_op: self,
+            op: UnaryOp::Not,
+        }
+    }
+}
+
 impl Distribution<UnaryOp> for StandardUniform {
     fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> UnaryOp {
         match rng.random_range(0..3) {
@@ -56,6 +68,28 @@ impl Distribution<UnaryOp> for StandardUniform {
             2 => UnaryOp::RightShift(rng.random_range(0..=32)),
             _ => unreachable!(),
         }
+    }
+}
+
+pub struct UnaryOpIntoIterator {
+    unwanted_op: UnaryOp,
+    op: UnaryOp,
+}
+
+impl Iterator for UnaryOpIntoIterator {
+    type Item = UnaryOp;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let result = self.op; 
+        match self.op {
+            UnaryOp::Not => self.op = UnaryOp::LeftShift(0),
+            UnaryOp::LeftShift(31) => self.op = UnaryOp::RightShift(0),
+            UnaryOp::LeftShift(x) => self.op = UnaryOp::LeftShift(x+1),
+            UnaryOp::RightShift(32) => return None,
+            UnaryOp::RightShift(x) => self.op = UnaryOp::RightShift(x+1),
+             
+        };
+        if result == self.unwanted_op {self.next()} else {Some(result)}
     }
 }
 

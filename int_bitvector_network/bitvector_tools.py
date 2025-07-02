@@ -59,3 +59,27 @@ def calcul_gate(children_result, value, input, nb_bits):
         if value == "xor":
             return result1 ^ result2
 
+def new_and(x, y, z, nb_bits):
+    y_s = y
+    star = -1
+    for i in range(nb_bits):
+        x_i = x & (1 << i)
+        y_i = y & (1 << i)
+        z_i = z & (1 << i)
+        if y_i:
+            star = i
+            y_star = y_i
+        if not z_i:
+            if star == -1 and x_i:
+                return -1, -1
+            else:
+                y_s -= y_star
+                if x_i:
+                    x += 1 << star
+                star = -1
+        if not x_i:
+            star = -1
+        print(x, star)
+    return x & ((1<<nb_bits)-1), y_s | bit_not(z, nb_bits)
+
+print(new_and(23, 13, 27, 5))
