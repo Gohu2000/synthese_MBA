@@ -39,11 +39,11 @@ impl Scores {
         for (id, delta) in &self.values {
             let id_sum = *hashmapsum.get(id).unwrap();
             p -= id_sum / sum;
-            if p <= 0. {
+            if p <= 0.001 {
                 return (*id, delta.get_op(p + id_sum / sum, |v| {f(v)/sum}))
             }
         }
-        unreachable!()
+        panic!("{p}")
     }
 }
 
@@ -79,29 +79,29 @@ impl Deltas {
             Deltas::Input(h) => {
                 for (op, v) in h {
                     p -= f(*v);
-                    if p <= 0. {
+                    if p <= 0.001 {
                         return Op::Input(*op)
                     }
                 }
-                unreachable!()
+                panic!("{p}")
             },
             Deltas::Unary(h) => {
                 for (op, v) in h {
                     p -= f(*v);
-                    if p <= 0. {
+                    if p <= 0.001 {
                         return Op::Unary(*op)
                     }
                 }
-                unreachable!()
+                panic!("{p}")
             },
             Deltas::Binary(h) => {
                 for (op, v) in h {
                     p -= f(*v);
-                    if p <= 0. {
+                    if p <= 0.001 {
                         return Op::Binary(*op)
                     }
                 }
-                unreachable!()
+                panic!("{p}")
             },
         }
     }

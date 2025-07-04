@@ -2,7 +2,7 @@ use crate::formula::{
     Node,
     grad::Scores,
 };
-use rand::Rng;
+use rand::{rng, Rng};
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::Display,
@@ -10,8 +10,10 @@ use std::{
     io::{Write, Read},
     time::Instant,
 };
+use conv::ValueFrom;
 
-type Parametres = (usize, usize, usize);
+/// (n_inputs, n_examples, size)
+pub type Parametres = (usize, usize, usize);
 
 #[derive(Deserialize, Serialize)]
 pub struct Instance {
@@ -23,8 +25,30 @@ pub struct Benchmark {
 }
 
 #[derive(Copy, Clone)]
-pub enum Solver {
-    Algonaif,
+pub enum Greedy {
+    ///Naif(tau)
+    Naif(f32),
+    ///Progressif(tau_min, tau_max)
+    Progressif(f32, f32),
+
+}
+#[derive(Copy, Clone)]
+pub enum Enumerator {
+    ///Random(size, nombre d'itérations par formule, nombre de formules)
+    Random(usize, usize, usize),
+    ///ProgressiveSize(size_max, nombre d'itérations par formule, nombre de formules)
+    ProgressiveSize(usize, usize, usize),
+}
+
+#[derive(Copy, Clone)]
+pub struct Solver {
+    pub enumerator: Enumerator,
+    pub greedy: Greedy,
+}
+
+pub struct SolverResult {
+    result: Option<Node>,
+    time: u128,
 }
 
 impl Instance {
@@ -47,20 +71,23 @@ impl Instance {
         serde_json::to_string(&self).unwrap()
     }
 
-    pub fn solve(&self, solver: Solver, rng: &mut impl Rng) -> Node {
+    pub fn solve(&self, solver: Solver, rng: &mut impl Rng) -> SolverResult {
         solver.solve(&self, rng)
     }
 
     pub fn solve_print(&self, solver: Solver, rng: &mut impl Rng, params: Parametres) {
         let (n_inputs, n_examples, size) = params;
-        let now = Instant::now();
-        let mut f = self.solve(solver, rng);
-        let time = now.elapsed().as_millis();
-        let s = f.current_score(self, n_examples);
+        let SolverResult { result: f, time } = self.solve(solver, rng);
+        println!("{solver}");
         println!("Paramètres          : (n_inputs, n_examples, size) = ({n_inputs}, {n_examples}, {size})");
-        println!("Formule obtenue     : {f}");
-        println!("Score de la formule : {s}");
-        println!("Temps de calcul     : {time} ms")
+        println!("Temps de calcul     : {time} ms");
+        if let Some(mut g) = f {
+            println!("Formule obtenue     : {g}");
+            let s = g.current_score(self, n_examples);
+            println!("Score de la formule : {s}");
+        } else {
+            println!("Pas de formule trouvée");
+        }
     }
 }
 
@@ -93,7 +120,7 @@ impl Benchmark {
         }
     }
 
-    pub fn solve(&self, solver: Solver, rng: &mut impl Rng) -> Vec<Node> {
+    pub fn solve(&self, solver: Solver, rng: &mut impl Rng) -> Vec<SolverResult> {
         self.instances.iter()
             .enumerate()
             .map(|(i, instance)| {println!{"{i}"}; solver.solve(instance, rng)})
@@ -103,51 +130,133 @@ impl Benchmark {
     pub fn solve_print(&self, solver: Solver, rng: &mut impl Rng, params: Parametres) {
         let (n_inputs, n_examples, size) = params;
         let now = Instant::now();
-        let mut result = self.solve(solver, rng);
-        let time = now.elapsed().as_millis();
-        let s: usize = result.iter_mut().zip(&self.instances).map(|(formula, instance)| {
-            if formula.current_score(instance, n_examples) > 0.99f32 {1} else {0}
+        let result = self.solve(solver, rng);
+        let total_time = now.elapsed().as_millis();
+        let mut max_time: u128 = 0;
+        let mut sum_size = 0;
+        let s: usize = result.iter().map(|SolverResult {result, time}| {
+            if *time > max_time {max_time += time};
+            if let Some(f) = result {sum_size += f.size(); 1} else {0}
         }).sum();
+        let mean_size = f32::value_from(sum_size).unwrap()/f32::value_from(s).unwrap();
         let n = result.len();
         println!();
-        println!("Paramètres          : (n_inputs, n_examples, size) = ({n_inputs}, {n_examples}, {size})");
-        println!("Algorithme          : {solver}");
-        println!("Nombre d'instances  : {n}");
-        println!("Nombre de succès    : {s} / {n}");
-        println!("Temps de calcul     : {time} ms")
+        println!("{solver}");
+        println!("Paramètres                               : (n_inputs, n_examples, size) = ({n_inputs}, {n_examples}, {size})");
+        println!("Nombre d'instances                       : {n}");
+        println!("Nombre de succès                         : {s} / {n}");
+        println!("Taille moyenne des formules obtenues     : {mean_size}");
+        println!("Temps de calcul total                    : {total_time} ms");
+        println!("Temps de calcul maximal pour une formule : {max_time} ms")
     }    
 }
 
-impl Solver {
-    pub fn solve(&self, instance: &Instance, rng: &mut impl Rng) -> Node{
+impl Greedy {
+    pub fn solve(&self, instance: &Instance, rng: &mut impl Rng, f: &mut Node, n: usize) -> bool {
         let n_examples = instance.outputs.len();
-        let n_inputs = instance.inputs[0].len();
         match self {
-            Solver::Algonaif => {
-                self.algonaif(instance, n_examples, n_inputs, rng, 1000)
+            Self::Naif(tau) => {
+                self.naif(instance, n_examples, rng, n, *tau, f)
+            } 
+            Self::Progressif(tau_min, tau_max) => {
+                self.progressif(instance, n_examples, rng, n, *tau_min, *tau_max, f)
             } 
         }
     }
+    
 
-    pub fn algonaif(&self, instance: &Instance, n_examples: usize, n_inputs: usize, rng: &mut impl Rng, n: usize) -> Node {
-        let mut f= Node::random(n_inputs, 15, 1, rng);
+    pub fn naif(&self, instance: &Instance, n_examples: usize, rng: &mut impl Rng, n: usize, tau: f32, f: &mut Node) -> bool {
         let mut scores: Scores;
         for _ in 0..n {
             let s = f.current_score(instance, n_examples);
-            if s > 0.99f32 {return f}
+            if s > 0.99f32 {return true} 
 
             scores = f.get_scores(instance, n_examples);
-            let (id, op) = scores.softmax(20., rng);
+            let (id, op) = scores.softmax(tau, rng);
             f.update_gate(id, op);
+        };
+        let s = f.current_score(instance, n_examples);
+        return s > 0.99f32
+    }
+
+    pub fn progressif(&self, instance: &Instance, n_examples: usize, rng: &mut impl Rng, n: usize, tau_min: f32, tau_max: f32, f: &mut Node) -> bool {
+        let f32n = f32::value_from(n).unwrap();
+        let step = 10.*(tau_max-tau_min)/(f32n-10.);
+        let mut tau = tau_min;
+        for tau in (0..(n/10)).map(|_| {tau += step; tau}) {
+            if self.naif(instance, n_examples, rng, 1, tau, f) {return true}
+        };
+        false
+    }
+}
+
+impl Enumerator {
+    fn list_formula(&self, n_inputs: usize) -> EnumeratorIntoIterator {
+        EnumeratorIntoIterator {enumerator: *self, n_inputs, compteur: 0}
+    }
+}
+
+struct EnumeratorIntoIterator {
+    enumerator: Enumerator,
+    n_inputs: usize,
+    compteur: usize
+}
+
+impl Iterator for EnumeratorIntoIterator {
+    type Item = (Node, usize);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut rng = rng();
+        match self.enumerator {
+            Enumerator::Random(size, m, n) => {
+                if n == 0 {None} else {
+                    self.enumerator = Enumerator::Random(size, m, n-1);
+                    Some((Node::random(self.n_inputs, size, 1, &mut rng), m))
+                }
+            },
+            Enumerator::ProgressiveSize(size_max, m, n) => {
+                if self.compteur == n {None} else {
+                    let formula_per_size = n/size_max;
+                    self.compteur += 1 ;
+                    let size = self.compteur / formula_per_size + 1;
+                    Some((Node::random(self.n_inputs, size, 1, &mut rng), m))
+                }
+            }
         }
-        f
+    }
+}
+
+impl Solver {
+    fn solve(&self, instance: &Instance, rng: &mut impl Rng) -> SolverResult {
+        let n_inputs = instance.inputs[0].len();
+        let now = Instant::now();
+        for (mut f, n) in self.enumerator.list_formula(n_inputs) {
+            if self.greedy.solve(instance, rng, &mut f, n) {return SolverResult {result: Some(f), time: now.elapsed().as_millis()}}
+        }
+        SolverResult {result: None, time: now.elapsed().as_millis()}
+    }
+}
+
+impl Display for Greedy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Naif(tau) => write!(f, "algorithme naif avec tau = {tau}"),
+            Self::Progressif(tau_min, tau_max) => write!(f, "algorithme progressif avec tau allant de {tau_min} à {tau_max}"),
+        }
+    }
+}
+
+impl Display for Enumerator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Random(size, n, m) => write!(f, "énumeration aléatoire de {m} formules de taille {size} avec {n} itérations par formule"),
+            Self::ProgressiveSize(size_max, m, n) => write!(f, "énumeration aléatoire de {m} formules de taille jusqu'à {size_max} avec {n} itérations par formule"),
+        }
     }
 }
 
 impl Display for Solver {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Solver::Algonaif => write!(f, "algorithme naif"),
-        }
+        write!(f, "Solver :\n   - Enumerateur        : {}\n   - Algorithme glouton : {}", self.enumerator, self.greedy)
     }
 }

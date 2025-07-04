@@ -81,5 +81,3 @@ def new_and(x, y, z, nb_bits):
             star = -1
         print(x, star)
     return x & ((1<<nb_bits)-1), y_s | bit_not(z, nb_bits)
-
-print(new_and(23, 13, 27, 5))

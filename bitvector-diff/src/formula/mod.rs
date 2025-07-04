@@ -207,6 +207,18 @@ impl NodeContent {
             },
         }
     }
+
+    fn size(&self) -> usize {
+        match self {
+            NodeContent::Input(_) => 1,
+            NodeContent::UnaryNode { child, .. } => {
+                child.size() + 1
+            }
+            NodeContent::BinaryNode { left, right, .. } => {
+                left.size() + right.size() + 1
+            },
+        }
+    }
 }
 
 impl Node {
@@ -342,6 +354,10 @@ impl Node {
                             p((x.bitxor(y)).not())
                         }).sum();
         s/(32.*f32::value_from(n_examples).unwrap())
+    }
+
+    pub fn size(&self) -> usize {
+        self.data.size()
     }
 }
 
