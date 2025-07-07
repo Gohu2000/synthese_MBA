@@ -1,7 +1,6 @@
-use crate::formula::{
-    Node,
-    grad::Scores,
-};
+use crate::{formula::{
+    grad::Scores, Node
+}, solving::results::Interpretor};
 use rand::{rng, Rng};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -12,16 +11,27 @@ use std::{
 };
 use conv::ValueFrom;
 
+mod results;
+
 /// (n_inputs, n_examples, size)
 pub type Parametres = (usize, usize, usize);
+
+#[derive(Deserialize, Serialize)]
+pub struct JsonData {
+    instance: Instance,
+    solution: String,
+    param: Parametres
+}
 
 #[derive(Deserialize, Serialize)]
 pub struct Instance {
     pub inputs: Vec<Vec<u32>>,
     pub outputs: Box<[u32]>,
 }
-pub struct Benchmark {
+pub struct Selection {
     instances: Vec<Instance>,
+    solutions: Vec<Node>,
+    params: Vec<Parametres>
 }
 
 #[derive(Copy, Clone)]
@@ -51,24 +61,29 @@ pub struct SolverResult {
     time: u128,
 }
 
+impl JsonData {
+    pub fn random(params: Parametres, rng: &mut impl Rng) -> Self {
+        let (n_inputs, n_examples, size) = params;
+        let mut f = Node::random(n_inputs, size, 1, rng);
+        let instance = f.to_instance(n_inputs, n_examples, rng);
+        Self { instance, solution: f.to_string(), param: params }
+    }
+
+    pub fn from_str(json_str: &str) -> Self {
+        let jd: Self = serde_json::from_str(json_str).unwrap();
+        jd
+    }
+
+    pub fn to_str(&self) -> String {
+        serde_json::to_string(&self).unwrap()
+    }
+}
+
 impl Instance {
     pub fn random(params: Parametres, rng: &mut impl Rng) -> Instance {
         let (n_inputs, n_examples, size) = params;
-        let mut f = Node::random(n_inputs.into(), size.into(), 1, rng);
-        let (inputs, outputs) = f.to_instance(n_inputs.into(), n_examples.into(), rng);
-        Instance {
-            inputs,
-            outputs
-        }
-    }
-
-    pub fn from_json(json_str: &str) -> Instance {
-        let i: Instance = serde_json::from_str(json_str).unwrap();
-        i
-    }
-
-    pub fn to_json(&self) -> String {
-        serde_json::to_string(&self).unwrap()
+        let mut f = Node::random(n_inputs, size, 1, rng);
+        f.to_instance(n_inputs, n_examples, rng)
     }
 
     pub fn solve(&self, solver: Solver, rng: &mut impl Rng) -> SolverResult {
@@ -91,33 +106,32 @@ impl Instance {
     }
 }
 
-impl Benchmark {
-    pub fn new(params: Parametres, rng: &mut impl Rng, n: usize) -> Benchmark {
-        let mut instances = Vec::new();
+impl Selection {
+    pub fn new(param: Parametres, rng: &mut impl Rng, n: usize, filename: &str) -> Self {
+        let mut data_file = File::create(filename).expect("creation failed");
         for _ in 0..n {
-            instances.push(Instance::random(params, rng));
+            let json_data= JsonData::random(param, rng);
+            let mut buffer = json_data.to_str();
+            buffer.push('\n');
+            data_file.write(buffer.as_bytes()).expect("write failed");
         }
-        Benchmark { instances }
+        Self::from_file(filename)
     }
 
-    pub fn from_file(filename: &str) -> Benchmark {
+    pub fn from_file(filename: &str) -> Self {
         let mut instances = Vec::new();
+        let mut solutions = Vec::new();
+        let mut params = Vec::new();
         let mut data_file = File::open(filename).unwrap();
         let mut file_content = String::new();
         data_file.read_to_string(&mut file_content).unwrap();
         for line in file_content.lines() {
-            instances.push(Instance::from_json(line));
+            let JsonData { instance, solution, param } = JsonData::from_str(line);
+            instances.push(instance);
+            solutions.push(Node::from_str(solution.as_str(), 1));
+            params.push(param);
         }
-        Benchmark { instances }
-    }
-
-    pub fn to_file(&self, filename: &str) {
-        let mut data_file = File::create(filename).expect("creation failed");
-        for i in &self.instances {
-            let mut buffer = i.to_json();
-            buffer.push('\n');
-            data_file.write(buffer.as_bytes()).expect("write failed");
-        }
+        Self { instances, solutions, params }
     }
 
     pub fn solve(&self, solver: Solver, rng: &mut impl Rng) -> Vec<SolverResult> {
@@ -127,19 +141,23 @@ impl Benchmark {
             .collect()
     }
 
-    pub fn solve_print(&self, solver: Solver, rng: &mut impl Rng, params: Parametres) {
+    pub fn solve_print(&self, solver: Solver, rng: &mut impl Rng, params: Parametres, reset_selection: bool) {
         let (n_inputs, n_examples, size) = params;
         let now = Instant::now();
         let result = self.solve(solver, rng);
+        let n = result.len();
         let total_time = now.elapsed().as_millis();
         let mut max_time: u128 = 0;
         let mut sum_size = 0;
-        let s: usize = result.iter().map(|SolverResult {result, time}| {
+        if reset_selection {Interpretor::new("interpretor.txt", n)};
+        let mut interpretor = Interpretor::from_file("interpretor.txt");
+        let s: usize = result.iter().enumerate().map(|(i, SolverResult {result, time})| {
             if *time > max_time {max_time += time};
-            if let Some(f) = result {sum_size += f.size(); 1} else {0}
+            if let Some(f) = result {interpretor.update(i);sum_size += f.size(); 1} else {0}
         }).sum();
+        interpretor.to_file("interpretor.txt");
+        interpretor.print_in_file("results.txt");
         let mean_size = f32::value_from(sum_size).unwrap()/f32::value_from(s).unwrap();
-        let n = result.len();
         println!();
         println!("{solver}");
         println!("Paramètres                               : (n_inputs, n_examples, size) = ({n_inputs}, {n_examples}, {size})");

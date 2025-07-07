@@ -59,13 +59,16 @@ impl BinaryOp {
             },
         }
     }
-}
+    pub fn from_char(c:char) -> Result<Self, &'static str> {
+        match c {
+            '^' => Ok(BinaryOp::Xor),
+            '|' => Ok(BinaryOp::Or),
+            '&' => Ok(BinaryOp::And),
+            _ => Err("Le charactère ne correspond pas à une opération binaire.")
+        }
+    }
 
-impl IntoIterator for BinaryOp {
-    type Item = BinaryOp;
-    type IntoIter = BinaryOpIntoIterator;
-
-    fn into_iter(self) -> Self::IntoIter {
+    pub fn into_iter_others(self) -> BinaryOpIntoIterator {
         BinaryOpIntoIterator {
             unwanted_op: self,
             index: 0,

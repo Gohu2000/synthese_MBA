@@ -27,6 +27,7 @@ impl Scores {
     }
 
     pub fn softmax(&self, tau:f32, rng: &mut impl Rng) -> (usize, Op) {
+
         let f = |v: f32| {exp(tau*v)};
         let mut sum = 0f32;
         let mut hashmapsum = HashMap::new();

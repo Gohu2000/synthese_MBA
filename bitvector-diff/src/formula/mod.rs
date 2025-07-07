@@ -1,8 +1,5 @@
 use std::{
-    collections::HashMap,
-    fmt::{Debug, Display},
-    num::NonZeroUsize,
-    ops::{BitAnd, BitXor, Not}, vec
+    collections::HashMap, fmt::{Debug, Display}, num::NonZeroUsize, ops::{BitAnd, BitXor, Not}, vec
 };
 
 use rand::Rng;
@@ -147,12 +144,8 @@ impl NodeContent {
     }
 
     fn compute_deltas(&mut self, grads: &[Grad], outputs: &[u32], inputs: &[Vec<u32>], n_examples: usize) -> Deltas {
-        let p = |mut n: u32| {
-            let mut result = 0f32;
-            while n > 0 {result = result + 1f32;n &= n-1}
-            result
-        };
-        let psi = |output: u32, Grad {influence, target}| {
+        let p = |n: u32| {u32::count_ones(n) as f32};
+        let compute_ratio_correct_bits = |output: u32, Grad {influence, target}| {
             p((output.bitxor(target)).not().bitand(influence))/(32.*f32::value_from(n_examples).unwrap())
         };
         match self {
@@ -162,7 +155,7 @@ impl NodeContent {
                 for j in 0..n_inputs {
                     if j != *i {
                         let v:f32 = inputs.iter().enumerate().map(|(k, input)| {
-                            psi(input[j], grads[k]) - psi(outputs[k], grads[k])
+                            compute_ratio_correct_bits(input[j], grads[k]) - compute_ratio_correct_bits(outputs[k], grads[k])
                         }).sum();
                         hashmap.insert(j, v);
                     }
@@ -172,9 +165,9 @@ impl NodeContent {
             NodeContent::UnaryNode { op, child } => {
                 let child_out = child.forward(inputs);
                 let mut hashmap = HashMap::new();
-                for new_op in op.into_iter() {
+                for new_op in op.into_iter_others() {
                     let v = child_out.iter().enumerate().map(|(k, x)| {
-                        psi(new_op.apply(*x), grads[k]) - psi(outputs[k], grads[k])
+                        compute_ratio_correct_bits(new_op.apply(*x), grads[k]) - compute_ratio_correct_bits(outputs[k], grads[k])
                     }).sum();
                     hashmap.insert(new_op, v);
                 }
@@ -184,9 +177,9 @@ impl NodeContent {
                 let left_out = left.forward(inputs);
                 let right_out = right.forward(inputs);
                 let mut hashmap = HashMap::new();
-                for new_op in op.into_iter() {
+                for new_op in op.into_iter_others() {
                     let v = left_out.iter().enumerate().map(|(k, x)| {
-                        psi(new_op.apply(*x, right_out[k]), grads[k]) - psi(outputs[k], grads[k])
+                        compute_ratio_correct_bits(new_op.apply(*x, right_out[k]), grads[k]) - compute_ratio_correct_bits(outputs[k], grads[k])
                     }).sum();
                     hashmap.insert(new_op, v);
                 }
@@ -277,14 +270,57 @@ impl Node {
         }
     }
 
-    pub fn to_instance(&mut self, n_inputs: usize, n_examples: usize, rng: &mut impl Rng) -> (Vec<Vec<u32>>, Box<[u32]>) {
+    pub fn from_str(str: &str, id: usize) -> Self {
+        let mut counter = 0;
+        for (i,c) in str.char_indices() {
+            if (counter == 0) & (c == 'x') {
+                if let Ok(j) = usize::from_str_radix(&str[2..], 10) {
+                    return Node::new(id, NodeContent::Input(j))
+                }
+                else {panic!("wrong format for a formula : {str}")}
+            }
+            if c == '(' {counter += 1}
+            if c == ')' {counter -= 1}
+            if counter == 0 {
+                if let Some(char_op) = str.chars().nth(i+2) {
+                    match char_op {
+                        '^' | '|' | '&' => {
+                            let left_child = Node::from_str(&str[1..i], 2 * id);
+                            let right_child = Node::from_str(&str[i+5..str.len()-1], 2 * id + 1);
+                            return Node::new(id, NodeContent::BinaryNode {
+                                op: BinaryOp::from_char(char_op).unwrap(),
+                                left: Box::from(left_child),
+                                right: Box::from(right_child)
+                            })
+                        },
+                        '!' | '<' | '>' => {
+                            let child = Node::from_str(&str[1..i], 2 * id);
+                            let i_opt = if char_op == '!' {None} else {Some(&str[i+5..])};
+                            return Node::new(id, NodeContent::UnaryNode {
+                                op: UnaryOp::from_char(char_op, i_opt).unwrap(),
+                                child: Box::from(child)
+                            })
+                        },
+                        _ => panic!("wrong format for a formula : {str}")
+                    }
+                }
+                else {panic!("wrong format for a formula : {str}")}
+            }
+        }
+        panic!("wrong format for a formula : {str}")
+    }
+
+    pub fn to_instance(&mut self, n_inputs: usize, n_examples: usize, rng: &mut impl Rng) -> Instance {
         let mut vec = Vec::new();
         for _ in 0..n_examples {
             let x: Vec<u32> = (0..n_inputs).map(|_| rng.random()).collect();
             vec.push(x);
         };
         let outputs = self.data.forward(vec.as_slice());
-        (vec, outputs)
+        Instance {
+            inputs: vec,
+            outputs
+        }
     }
 
     fn _find_gate(&mut self, id: usize) -> &mut Self {
@@ -344,11 +380,7 @@ impl Node {
         let inputs = instance.inputs.as_slice();
         let targets = &instance.outputs;
 
-        let p = |mut n: u32| {
-            let mut result = 0f32;
-            while n > 0 {result = result + 1f32;n &= n-1}
-            result
-        };
+        let p = |n: u32| {u32::count_ones(n) as f32};
         let outputs = self.forward(inputs);
         let s: f32 = outputs.iter().zip(targets).map(|(x, y)| {
                             p((x.bitxor(y)).not())

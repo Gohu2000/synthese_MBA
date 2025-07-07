@@ -1,15 +1,16 @@
-use bitvector_diff::solving::{Benchmark, Solver, Greedy, Enumerator, Parametres};
+use bitvector_diff::solving::{Selection, Solver, Greedy, Enumerator, Parametres};
 use rand::rng;
 
-
 fn main() {
-    let params: Parametres = (5, 512, 10); // (n_inputs, n_examples, size)
+    let params: Parametres = (5, 128, 10); // (n_inputs, n_examples, size)
     let mut rng = rng();
-    //let benchmark = Benchmark::new(params, &mut rng, 100);
-    //benchmark.to_file("benchmark.txt");
-    let benchmark = Benchmark::from_file("benchmark.txt");
+    let selection = Selection::new(params, &mut rng, 50, "selection.txt");
+    //let selection = Selection::from_file("selection.txt");
     let greedy = Greedy::Naif(50.);
-    let enumerator = Enumerator::ProgressiveSize(20, 100, 100);
+    let enumerator = Enumerator::ProgressiveSize(20, 10, 100);
     let solver = Solver{greedy, enumerator};
-    benchmark.solve_print(solver, &mut rng, params)
+    selection.solve_print(solver, &mut rng, params, true);
+    for _ in 0..20 {
+        selection.solve_print(solver, &mut rng, params, false);
+    }
 }

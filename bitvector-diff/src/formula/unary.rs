@@ -36,6 +36,40 @@ impl UnaryOp {
             },
         }
     }
+
+    pub fn from_char(c:char, i_opt: Option<&str>) -> Result<Self, &'static str> {
+        match c {
+            '!' => Ok(UnaryOp::Not),
+            '<' => {
+                if let Some(i_str) = i_opt {
+                    if let Ok(i) = u32::from_str_radix(i_str, 10) {
+                        Ok(UnaryOp::LeftShift(i))
+                    }
+                    else {Err("Le décalage du shift doit être un entier")}
+                }
+                else {Err("Le décalage du shift doit être précisé")}
+                
+            },
+            '>' => {
+                if let Some(i_str) = i_opt {
+                    if let Ok(i) = u32::from_str_radix(i_str, 10) {
+                        Ok(UnaryOp::RightShift(i))
+                    }
+                    else {Err("Le décalage du shift doit être un entier")}
+                }
+                else {Err("Le décalage du shift doit être précisé")}
+                
+            },
+            _ => Err("Le charactère ne correspond pas à une opération binaire.")
+        }
+    }
+
+    pub fn into_iter_others(self) -> UnaryOpIntoIterator {
+        UnaryOpIntoIterator {
+            unwanted_op: self,
+            op: UnaryOp::Not,
+        }
+    }
 }
 
 impl Display for UnaryOp {
@@ -44,18 +78,6 @@ impl Display for UnaryOp {
             UnaryOp::Not => write!(f, "!"),
             UnaryOp::LeftShift(i) => write!(f, "<< {i}"),
             UnaryOp::RightShift(i) => write!(f, ">> {i}"),
-        }
-    }
-}
-
-impl IntoIterator for UnaryOp {
-    type Item = UnaryOp;
-    type IntoIter = UnaryOpIntoIterator;
-
-    fn into_iter(self) -> Self::IntoIter {
-        UnaryOpIntoIterator {
-            unwanted_op: self,
-            op: UnaryOp::Not,
         }
     }
 }
