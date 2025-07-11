@@ -106,6 +106,19 @@ impl NodeContent {
         }
     }
 
+    pub fn clear_forward(&mut self) {
+        match self {
+            NodeContent::Input(_) => (),
+            NodeContent::UnaryNode { op:_ , child } => {
+                child.clear_forward();
+            }
+            NodeContent::BinaryNode { op:_ , left, right } => {
+                left.clear_forward();
+                right.clear_forward();
+            }
+        }
+    }
+
     fn _walk(&mut self, m: Move, moves: Vec<Move>) -> &mut Node {
         match self {
             NodeContent::Input(_) => unreachable!(),
@@ -241,6 +254,11 @@ impl Node {
     pub fn clear_backward(&mut self) {
         self.grads = None;
         self.data.clear_backward()
+    }
+
+    pub fn clear_forward(&mut self) {
+        self.outputs = None;
+        self.data.clear_forward()
     }
 
     pub fn random(n_inputs: usize, size: usize, id: usize, rng: &mut impl Rng) -> Self {
@@ -390,6 +408,15 @@ impl Node {
 
     pub fn size(&self) -> usize {
         self.data.size()
+    }
+
+    pub fn compare(&mut self, n_inputs: usize, other: &mut Node, rng: &mut impl Rng) -> f32 {
+        let n_examples = 1000;
+        let instance = other.to_instance(n_inputs, n_examples, rng);
+        self.clear_forward();
+        let s = self.current_score(&instance, n_examples);
+        self.clear_forward();
+        s
     }
 }
 

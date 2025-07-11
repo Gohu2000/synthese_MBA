@@ -11,7 +11,7 @@ use std::{
 };
 use conv::ValueFrom;
 
-mod results;
+pub mod results;
 
 /// (n_inputs, n_examples, size)
 pub type Parametres = (usize, usize, usize);
@@ -30,7 +30,7 @@ pub struct Instance {
 }
 pub struct Selection {
     instances: Vec<Instance>,
-    solutions: Vec<Node>,
+    pub solutions: Vec<Node>,
     params: Vec<Parametres>
 }
 
@@ -69,6 +69,19 @@ impl JsonData {
         Self { instance, solution: f.to_string(), param: params }
     }
 
+    pub fn from_file(filename: &str) -> Self {
+        let mut data_file = File::open(filename).unwrap();
+        let mut file_content = String::new();
+        data_file.read_to_string(&mut file_content).unwrap();
+        Self::from_str(file_content.as_str())
+    }
+
+    pub fn to_file(&self, filename: &str) {
+        let mut data_file = File::create(filename).expect("creation failed");
+        let buffer = self.to_str();
+        data_file.write(buffer.as_bytes()).expect("write failed");
+    }
+
     pub fn from_str(json_str: &str) -> Self {
         let jd: Self = serde_json::from_str(json_str).unwrap();
         jd
@@ -76,6 +89,26 @@ impl JsonData {
 
     pub fn to_str(&self) -> String {
         serde_json::to_string(&self).unwrap()
+    }
+
+    pub fn solve_print(&self, solver: Solver, rng: &mut impl Rng) {
+        let JsonData { instance, solution, param } = self;
+        let mut node_solution = Node::from_str(solution.as_str(), 1);
+        let (n_inputs, n_examples, size) = *param;
+        let SolverResult { result: f, time } = instance.solve(solver, rng);
+        println!();
+        println!("{solver}");
+        println!("Paramètres          : (n_inputs, n_examples, size) = ({n_inputs}, {n_examples}, {size})");
+        println!("Temps de calcul     : {time} ms");
+        if let Some(mut g) = f {
+            println!("Formule solution    : {node_solution}");
+            println!("Formule obtenue     : {g}");
+            let s = g.compare(n_inputs, &mut node_solution, rng);
+            println!("Score d'équivalence : {s}");
+            println!("Taille de la formule: {}", g.size());
+        } else {
+            println!("Pas de formule trouvée");
+        }
     }
 }
 
@@ -88,21 +121,6 @@ impl Instance {
 
     pub fn solve(&self, solver: Solver, rng: &mut impl Rng) -> SolverResult {
         solver.solve(&self, rng)
-    }
-
-    pub fn solve_print(&self, solver: Solver, rng: &mut impl Rng, params: Parametres) {
-        let (n_inputs, n_examples, size) = params;
-        let SolverResult { result: f, time } = self.solve(solver, rng);
-        println!("{solver}");
-        println!("Paramètres          : (n_inputs, n_examples, size) = ({n_inputs}, {n_examples}, {size})");
-        println!("Temps de calcul     : {time} ms");
-        if let Some(mut g) = f {
-            println!("Formule obtenue     : {g}");
-            let s = g.current_score(self, n_examples);
-            println!("Score de la formule : {s}");
-        } else {
-            println!("Pas de formule trouvée");
-        }
     }
 }
 
@@ -167,6 +185,16 @@ impl Selection {
         println!("Temps de calcul total                    : {total_time} ms");
         println!("Temps de calcul maximal pour une formule : {max_time} ms")
     }    
+
+    pub fn change_instances(&mut self, rng: &mut impl Rng) {
+        self.instances = self.solutions.iter_mut().enumerate().map(|(i, node)| {
+            let (n_inputs, n_examples, _) = self.params[i];
+            let i = node.to_instance(n_inputs, n_examples, rng);
+            node.clear_forward();
+            node.clear_backward();
+            i
+        }).collect()
+    }
 }
 
 impl Greedy {

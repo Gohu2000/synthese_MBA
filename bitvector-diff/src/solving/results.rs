@@ -3,6 +3,8 @@ use std::{
     io::{Write, Read},
 };
 
+use crate::formula::Node;
+
 pub struct Interpretor {
     found_vec: Vec<usize>
 }
@@ -40,5 +42,13 @@ impl Interpretor {
             if (i+1) % 10 == 0 {buffer.push('\n')} else {buffer.push(' ')}
         }
         data_file.write(buffer.as_bytes()).expect("write failed");
+    }
+
+    pub fn print_if_counter(&self, formulas: Vec<Node>, n: usize) {
+        for (i, counter) in self.found_vec.iter().enumerate() {
+            if *counter == n {
+                println!("{}", formulas[i])
+            }
+        }
     }
 }
