@@ -1,1 +1,1 @@
-oarsub -l host=1,walltime=1:00:00 -p "cluster='paradoxe'" /home/gbathie/synthese_MBA/bitvector-diff/run.sh -q default
+oarsub -l host=1,walltime=1:00:00 -p "cluster='paradoxe'" run.sh -q default | $(python3 watch_stdout.py)

@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 use std::{
     fmt::Display,
     fs::File,
-    io::{Write, Read},
-    time::Instant,
+    io::{Read, Write},
+    time::{Duration, Instant},
 };
 use conv::ValueFrom;
 
@@ -136,17 +136,17 @@ impl JsonData {
         serde_json::to_string(&self).unwrap()
     }
 
-    pub fn solve_final_result(self, solver: Solver, rng: &mut impl Rng) {
+    pub fn solve_final_result(self, max_time: u64, solver: Solver, rng: &mut impl Rng) {
         let JsonData { instance, .. } = &self;
-        let solver_result = instance.solve(solver, rng);
+        let solver_result = instance.solve(max_time, solver, rng);
         println!("{}", FinalResult::from(solver_result, self, solver, rng))
     }
 
-    pub fn solve_print(&self, solver: Solver, rng: &mut impl Rng) {
+    pub fn solve_print(&self, max_time: u64, solver: Solver, rng: &mut impl Rng) {
         let JsonData { instance, solution, param } = self;
         let mut node_solution = Node::from_str(solution.as_str(), 1);
         let (n_inputs, n_examples, size) = *param;
-        let SolverResult { result: f, time } = instance.solve(solver, rng);
+        let SolverResult { result: f, time } = instance.solve(max_time, solver, rng);
         println!();
         println!("{solver}");
         println!("Paramètres          : (n_inputs, n_examples, size) = ({n_inputs}, {n_examples}, {size})");
@@ -170,8 +170,8 @@ impl Instance {
         f.to_instance(n_inputs, n_examples, rng)
     }
 
-    pub fn solve(&self, solver: Solver, rng: &mut impl Rng) -> SolverResult {
-        solver.solve(&self, rng)
+    pub fn solve(&self, max_time: u64, solver: Solver, rng: &mut impl Rng) -> SolverResult {
+        solver.solve(max_time, &self, rng)
     }
 }
 
@@ -203,17 +203,17 @@ impl Selection {
         Self { instances, solutions, params }
     }
 
-    pub fn solve(&self, solver: Solver, rng: &mut impl Rng) -> Vec<SolverResult> {
+    pub fn solve(&self, max_time: u64, solver: Solver, rng: &mut impl Rng) -> Vec<SolverResult> {
         self.instances.iter()
             .enumerate()
-            .map(|(i, instance)| {println!{"{i}"}; solver.solve(instance, rng)})
+            .map(|(i, instance)| {println!{"{i}"}; solver.solve(max_time, instance, rng)})
             .collect()
     }
 
-    pub fn solve_print(&self, solver: Solver, rng: &mut impl Rng, params: Parametres, reset_selection: bool) {
+    pub fn solve_print(&self, max_time: u64, solver: Solver, rng: &mut impl Rng, params: Parametres, reset_selection: bool) {
         let (n_inputs, n_examples, size) = params;
         let now = Instant::now();
-        let result = self.solve(solver, rng);
+        let result = self.solve(max_time, solver, rng);
         let n = result.len();
         let total_time = now.elapsed().as_millis();
         let mut max_time: u128 = 0;
@@ -328,10 +328,13 @@ impl Iterator for EnumeratorIntoIterator {
 }
 
 impl Solver {
-    fn solve(&self, instance: &Instance, rng: &mut impl Rng) -> SolverResult {
+    fn solve(&self, max_time: u64, instance: &Instance, rng: &mut impl Rng) -> SolverResult {
         let n_inputs = instance.inputs[0].len();
         let now = Instant::now();
         for (mut f, n) in self.enumerator.list_formula(n_inputs) {
+            if now.elapsed() > Duration::from_secs(max_time) {
+                break
+            }
             if self.greedy.solve(instance, rng, &mut f, n) {return SolverResult {result: Some(f), time: now.elapsed().as_millis()}}
         }
         SolverResult {result: None, time: now.elapsed().as_millis()}

@@ -4,6 +4,8 @@ use bitvector_diff::solving::{
 use clap::Parser;
 use rand::{rng, Rng};
 
+const MAX_TIME: u64 = 59;
+
 #[derive(Parser)]
 struct CliArgs {
     /// Name of the .json file to read.
@@ -17,10 +19,10 @@ fn old_calcul(selection: Selection, params:Parametres, rng: &mut impl Rng) {
     let greedy = Greedy::Naif(50.);
     let enumerator = Enumerator::ProgressiveSize(20, 10, 100);
     let solver = Solver{greedy, enumerator};
-    selection.solve_print(solver, rng, params, true);
+    selection.solve_print(MAX_TIME, solver, rng, params, true);
     for _ in 0..20 {
         //selection.change_instances(&mut rng);
-        selection.solve_print(solver, rng, params, false);
+        selection.solve_print(MAX_TIME, solver, rng, params, false);
     }
 }
 
@@ -31,7 +33,7 @@ fn main() {
     let enumerator = Enumerator::AlternateSize(20, 1000);
     let solver = Solver{greedy, enumerator};
     let json_data = JsonData::from_file(&input_filename);
-    json_data.solve_final_result(solver, &mut rng);
+    json_data.solve_final_result(MAX_TIME, solver, &mut rng);
     //let interpretor = Interpretor::from_file("interpretor.txt");
     //interpretor.print_if_counter(selection.solutions, 0);
 }
