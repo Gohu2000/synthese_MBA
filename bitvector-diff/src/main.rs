@@ -28,10 +28,10 @@ fn main() {
     let CliArgs { input_filename } = CliArgs::parse();
     let mut rng = rng();
     let greedy = Greedy::Naif(50.);
-    let enumerator = Enumerator::ProgressiveSize(20, 100, 300);
+    let enumerator = Enumerator::AlternateSize(20, 1000);
     let solver = Solver{greedy, enumerator};
     let json_data = JsonData::from_file(&input_filename);
-    json_data.solve_print(solver, &mut rng);
+    json_data.solve_final_result(solver, &mut rng);
     //let interpretor = Interpretor::from_file("interpretor.txt");
     //interpretor.print_if_counter(selection.solutions, 0);
 }

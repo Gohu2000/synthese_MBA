@@ -34,7 +34,7 @@ pub struct Selection {
     params: Vec<Parametres>
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum Greedy {
     ///Naif(tau)
     Naif(f32),
@@ -42,15 +42,17 @@ pub enum Greedy {
     Progressif(f32, f32),
 
 }
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum Enumerator {
     ///Random(size, nombre d'itérations par formule, nombre de formules)
     Random(usize, usize, usize),
     ///ProgressiveSize(size_max, nombre d'itérations par formule, nombre de formules)
     ProgressiveSize(usize, usize, usize),
+    ///ProgressiveSize(size_max, nombre d'itérations par formule)
+    AlternateSize(usize, usize),
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct Solver {
     pub enumerator: Enumerator,
     pub greedy: Greedy,
@@ -59,6 +61,49 @@ pub struct Solver {
 pub struct SolverResult {
     result: Option<Node>,
     time: u128,
+}
+
+pub enum FinalResult {
+    Found(FoundResult),
+    NotFound(JsonData, u128)
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct FoundResult {
+    formula: String,
+    time: u128,
+    solution: String,
+    size: usize,
+    equivalence: f32,
+    solver: String,
+    param: Parametres,
+    instance: Instance
+}
+
+impl FoundResult {
+    pub fn from_str(json_str: &str) -> Self {
+        let fr: Self = serde_json::from_str(json_str).unwrap();
+        fr
+    }
+
+    pub fn to_str(&self) -> String {
+        serde_json::to_string(&self).unwrap()
+    }
+}
+
+impl FinalResult {
+    pub fn from(solver_result: SolverResult, json_data: JsonData, solver: Solver, rng: &mut impl Rng) -> Self {
+        let SolverResult { result, time } = solver_result;
+        if let Some(mut formula) = result {
+            let JsonData { instance, solution, param } = json_data;
+            let (n_inputs, ..) = param;
+            let equivalence = formula.compare(n_inputs, &mut Node::from_str(&solution, 1), rng);
+            Self::Found(FoundResult { formula: formula.to_string(), time, solution, size: formula.size(), equivalence, solver: format!("{:?}", solver), param, instance })
+        }
+        else {
+            Self::NotFound(json_data, time)
+        }
+    }
 }
 
 impl JsonData {
@@ -89,6 +134,12 @@ impl JsonData {
 
     pub fn to_str(&self) -> String {
         serde_json::to_string(&self).unwrap()
+    }
+
+    pub fn solve_final_result(self, solver: Solver, rng: &mut impl Rng) {
+        let JsonData { instance, .. } = &self;
+        let solver_result = instance.solve(solver, rng);
+        println!("{}", FinalResult::from(solver_result, self, solver, rng))
     }
 
     pub fn solve_print(&self, solver: Solver, rng: &mut impl Rng) {
@@ -267,6 +318,10 @@ impl Iterator for EnumeratorIntoIterator {
                     let size = self.compteur / formula_per_size + 1;
                     Some((Node::random(self.n_inputs, size, 1, &mut rng), m))
                 }
+            },
+            Enumerator::AlternateSize(size_max, m) => {
+                if self.compteur == size_max {self.compteur = 1} else {self.compteur += 1}
+                    Some((Node::random(self.n_inputs, self.compteur, 1, &mut rng), m))
             }
         }
     }
@@ -295,8 +350,9 @@ impl Display for Greedy {
 impl Display for Enumerator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Random(size, n, m) => write!(f, "énumeration aléatoire de {m} formules de taille {size} avec {n} itérations par formule"),
-            Self::ProgressiveSize(size_max, m, n) => write!(f, "énumeration aléatoire de {m} formules de taille jusqu'à {size_max} avec {n} itérations par formule"),
+            Self::Random(size, n, m) => write!(f, "énumeration aléatoire de {n} formules de taille {size} avec {m} itérations par formule"),
+            Self::ProgressiveSize(size_max, m, n) => write!(f, "énumeration aléatoire de {m} formules de taille jusqu'à {size_max} avec {m} itérations par formule"),
+            Self::AlternateSize(size_max, m) => write!(f, "énumeration aléatoire de formules dont la taille alterne entre 1 et {size_max} avec {m} itérations par formule"),
         }
     }
 }
@@ -304,5 +360,14 @@ impl Display for Enumerator {
 impl Display for Solver {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Solver :\n   - Enumerateur        : {}\n   - Algorithme glouton : {}", self.enumerator, self.greedy)
+    }
+}
+
+impl Display for FinalResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FinalResult::Found(found_result) => write!(f, "Found: {}", found_result.to_str()),
+            FinalResult::NotFound(json_data, time) => write!(f, "Not found: {time}ms {}", json_data.to_str()),
+        }
     }
 }
