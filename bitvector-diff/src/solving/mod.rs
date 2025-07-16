@@ -1,6 +1,6 @@
 use crate::{formula::{
     grad::Scores, Node
-}, solving::results::Interpretor};
+}, solving::results::{FinalResult, Interpretor}};
 use rand::{rng, Rng};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -61,49 +61,6 @@ pub struct Solver {
 pub struct SolverResult {
     result: Option<Node>,
     time: u128,
-}
-
-pub enum FinalResult {
-    Found(FoundResult),
-    NotFound(JsonData, u128)
-}
-
-#[derive(Deserialize, Serialize)]
-pub struct FoundResult {
-    formula: String,
-    time: u128,
-    solution: String,
-    size: usize,
-    equivalence: f32,
-    solver: String,
-    param: Parametres,
-    instance: Instance
-}
-
-impl FoundResult {
-    pub fn from_str(json_str: &str) -> Self {
-        let fr: Self = serde_json::from_str(json_str).unwrap();
-        fr
-    }
-
-    pub fn to_str(&self) -> String {
-        serde_json::to_string(&self).unwrap()
-    }
-}
-
-impl FinalResult {
-    pub fn from(solver_result: SolverResult, json_data: JsonData, solver: Solver, rng: &mut impl Rng) -> Self {
-        let SolverResult { result, time } = solver_result;
-        if let Some(mut formula) = result {
-            let JsonData { instance, solution, param } = json_data;
-            let (n_inputs, ..) = param;
-            let equivalence = formula.compare(n_inputs, &mut Node::from_str(&solution, 1), rng);
-            Self::Found(FoundResult { formula: formula.to_string(), time, solution, size: formula.size(), equivalence, solver: format!("{:?}", solver), param, instance })
-        }
-        else {
-            Self::NotFound(json_data, time)
-        }
-    }
 }
 
 impl JsonData {
@@ -269,7 +226,7 @@ impl Greedy {
             if s > 0.99f32 {return true} 
 
             scores = f.get_scores(instance, n_examples);
-            let (id, op) = scores.softmax(tau, rng);
+            let (id, op) = scores.softmax(n_examples,tau, rng);
             f.update_gate(id, op);
         };
         let s = f.current_score(instance, n_examples);
@@ -363,14 +320,5 @@ impl Display for Enumerator {
 impl Display for Solver {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Solver :\n   - Enumerateur        : {}\n   - Algorithme glouton : {}", self.enumerator, self.greedy)
-    }
-}
-
-impl Display for FinalResult {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            FinalResult::Found(found_result) => write!(f, "Found: {}", found_result.to_str()),
-            FinalResult::NotFound(json_data, time) => write!(f, "Not found: {time}ms {}", json_data.to_str()),
-        }
     }
 }

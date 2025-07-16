@@ -157,9 +157,9 @@ impl NodeContent {
     }
 
     fn compute_deltas(&mut self, grads: &[Grad], outputs: &[u32], inputs: &[Vec<u32>], n_examples: usize) -> Deltas {
-        let p = |n: u32| {u32::count_ones(n) as f32};
+        let p = |n: u32| {u32::count_ones(n)};
         let compute_ratio_correct_bits = |output: u32, Grad {influence, target}| {
-            p((output.bitxor(target)).not().bitand(influence))/(32.*f32::value_from(n_examples).unwrap())
+            p((output.bitxor(target)).not().bitand(influence))
         };
         match self {
             NodeContent::Input(i) => {
@@ -167,7 +167,7 @@ impl NodeContent {
                 let mut hashmap = HashMap::new();
                 for j in 0..n_inputs {
                     if j != *i {
-                        let v:f32 = inputs.iter().enumerate().map(|(k, input)| {
+                        let v = inputs.iter().enumerate().map(|(k, input)| {
                             compute_ratio_correct_bits(input[j], grads[k]) - compute_ratio_correct_bits(outputs[k], grads[k])
                         }).sum();
                         hashmap.insert(j, v);
