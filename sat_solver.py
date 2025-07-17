@@ -7,10 +7,10 @@ import json
 import cvc5
 from cvc5 import Kind#, TermManager
 
-type Input = list[int]
-type Output = int
-type Example = Tuple[Input, Output]
-type Task = list[Example]
+Input = list[int]
+Output = int
+Example = Tuple[Input, Output]
+Task = list[Example]
 
 
 def solve_cvc5(examples: Task, bit_vec_size: int, n_vars: int):
