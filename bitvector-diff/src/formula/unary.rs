@@ -145,4 +145,30 @@ mod test {
             assert_eq!(x & z, z);
         }
     }
+
+    #[test]
+    fn shift_32_is_0() {
+        for _ in 0..100 {
+            let x: u32 = rng().random();
+            let shift_left = UnaryOp::LeftShift(32);
+            let shift_right = UnaryOp::RightShift(32);
+            let y = shift_left.apply(x);
+            let z = shift_right.apply(x);
+            assert_eq!(y, 0);
+            assert_eq!(z, 0);
+        }
+    }
+
+    #[test]
+    fn shift_0_is_id() {
+        for _ in 0..100 {
+            let x: u32 = rng().random();
+            let shift_left = UnaryOp::LeftShift(0);
+            let shift_right = UnaryOp::RightShift(0);
+            let y = shift_left.apply(x);
+            let z = shift_right.apply(x);
+            assert_eq!(y, x);
+            assert_eq!(z, x);
+        }
+    }
 }

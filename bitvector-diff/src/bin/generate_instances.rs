@@ -1,5 +1,5 @@
 use bitvector_diff::solving::{JsonData, Parametres};
-use rand::{rng, rngs::ThreadRng, SeedableRng};
+use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 
 fn generate_instances(n: usize, folder: &str) {
