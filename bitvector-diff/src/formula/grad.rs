@@ -38,7 +38,7 @@ impl Scores {
             sum += sum_of_id;
         };
         let mut p: f32 = rng.random();
-        let mut sum_of_id = 0f32;
+        let mut sum_of_id;
         for (id, delta) in &self.values {
             sum_of_id = *hashmapsum.get(id).unwrap();
             p -= sum_of_id / sum;

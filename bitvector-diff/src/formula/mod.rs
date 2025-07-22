@@ -156,7 +156,7 @@ impl NodeContent {
         }
     }
 
-    fn compute_deltas(&mut self, grads: &[Grad], outputs: &[u32], inputs: &[Vec<u32>], n_examples: usize) -> Deltas {
+    fn compute_deltas(&mut self, grads: &[Grad], outputs: &[u32], inputs: &[Vec<u32>]) -> Deltas {
         let p = |n: u32| {u32::count_ones(n)};
         let compute_ratio_correct_bits = |output: u32, Grad {influence, target}| {
             p((output.bitxor(target)).not().bitand(influence))
@@ -201,15 +201,15 @@ impl NodeContent {
         }
     }
 
-    fn compute_scores(&mut self, inputs: &[Vec<u32>], scores: &mut Scores, n_examples: usize) {
+    fn compute_scores(&mut self, inputs: &[Vec<u32>], scores: &mut Scores) {
         match self {
             NodeContent::Input(_) => (),
             NodeContent::UnaryNode { child, .. } => {
-                child.compute_scores(inputs, scores, n_examples)
+                child.compute_scores(inputs, scores)
             }
             NodeContent::BinaryNode { left, right, .. } => {
-                left.compute_scores(inputs, scores, n_examples);
-                right.compute_scores(inputs, scores, n_examples);
+                left.compute_scores(inputs, scores);
+                right.compute_scores(inputs, scores);
             },
         }
     }
@@ -341,6 +341,67 @@ impl Node {
         }
     }
 
+    pub fn mutate(&mut self, n_inputs: usize, equilibrate: bool, rng: &mut impl Rng) {
+        let id_leave = self.choose_leave(equilibrate, rng);
+        let moves = moves_for_id(id_leave);
+        let leave = self.walk_outputs(moves);
+        let is_unary = rng.random_bool(0.5);
+        if is_unary {
+            let child = Self::random(n_inputs, 1, 2 * id_leave, rng);
+            leave.data = NodeContent::UnaryNode {
+                op: rng.random(),
+                child: Box::from(child),
+            };
+        } else {
+            let left_child = Self::random(n_inputs, 1, 2 * id_leave, rng);
+            let right_child = Self::random(n_inputs, 1, 2 * id_leave + 1, rng);
+            leave.data = NodeContent::BinaryNode {
+                op: rng.random(),
+                left: Box::from(left_child),
+                right: Box::from(right_child),
+            };
+        }
+    }
+
+    fn choose_leave(&self, equilibrate: bool, rng: &mut impl Rng) -> usize {
+        if equilibrate {
+            match &self.data {
+                NodeContent::Input(_) => self.id.into(),
+                NodeContent::UnaryNode { op: _, child } => child.choose_leave(equilibrate, rng),
+                NodeContent::BinaryNode { op: _, left, right } => {
+                    let choose_left = rng.random_bool(0.5);
+                    if choose_left {
+                        left.choose_leave(equilibrate, rng)
+                    }
+                    else {
+                        right.choose_leave(equilibrate, rng)
+                    }
+                },
+            }
+        }
+        else {
+            let leaves = self.get_leaves();
+            let index = rng.random_range(0..leaves.len());
+            leaves[index]
+        }
+    }
+
+    fn get_leaves(&self) -> Vec<usize> {
+        match &self.data {
+            NodeContent::Input(_) => {
+                let mut result = Vec::new();
+                result.push(self.id.into());
+                result
+            },
+            NodeContent::UnaryNode { op: _, child } => child.get_leaves(),
+            NodeContent::BinaryNode { op: _, left, right } => {
+                let left_leaves = left.get_leaves();
+                let right_leaves = right.get_leaves();
+                [left_leaves, right_leaves].concat()
+            },
+        }
+    }
+
     fn _find_gate(&mut self, id: usize) -> &mut Self {
         let moves = moves_for_id(id);
         self._walk(moves)
@@ -372,17 +433,17 @@ impl Node {
         self.clear_backward();
     }
 
-    fn compute_deltas(&mut self, inputs: &[Vec<u32>], n_examples: usize) -> Deltas {
+    fn compute_deltas(&mut self, inputs: &[Vec<u32>]) -> Deltas {
         self.data
-            .compute_deltas(self.grads.as_ref().unwrap(), self.outputs.as_ref().unwrap(), inputs, n_examples)
+            .compute_deltas(self.grads.as_ref().unwrap(), self.outputs.as_ref().unwrap(), inputs)
     }
 
-    fn compute_scores(&mut self, inputs: &[Vec<u32>], scores: &mut Scores, n_examples: usize) {
-        scores.values.insert(self.id.into(), self.compute_deltas(inputs, n_examples));
-        self.data.compute_scores(inputs, scores, n_examples);
+    fn compute_scores(&mut self, inputs: &[Vec<u32>], scores: &mut Scores) {
+        scores.values.insert(self.id.into(), self.compute_deltas(inputs));
+        self.data.compute_scores(inputs, scores);
     }
 
-    pub fn get_scores(&mut self, instance: &Instance, n_examples: usize) -> Scores {
+    pub fn get_scores(&mut self, instance: &Instance) -> Scores {
         let inputs = instance.inputs.as_slice();
         let targets = &instance.outputs;
 
@@ -390,7 +451,7 @@ impl Node {
         self.forward(inputs);
         self.backward(init_grads);
         let mut scores = Scores::new();
-        self.compute_scores(inputs, &mut scores, n_examples);
+        self.compute_scores(inputs, &mut scores);
         scores
     }
 
@@ -458,3 +519,83 @@ impl Display for Node {
         write!(f, "{}", self.data)
     }
 }
+
+#[cfg(test)]
+mod test {
+    use rand::{Rng, rng};
+
+    use crate::{formula::{grad::Grad, Node}, solving::Instance};
+
+    #[test]
+    fn random_size() {
+        for _ in 0..100 {
+            let n_inputs: usize = rng().random_range(1..1000);
+            let size: usize = rng().random_range(1..1000);
+            let f = Node::random(n_inputs, size, 1, &mut rng());
+            assert_eq!(f.size(), size)
+        }
+    }
+
+    #[test]
+    fn from_str_size() {
+        let s = "((((x_0) << 19) >> 26) & ((x_0) ^ (x_0))) ^ (((((x_0) << 11) & (((x_0) !) & (x_0))) ^ (x_0)) ^ (((x_0) & ((x_0) << 1)) & (((x_0) << 17) >> 5)))";
+        let f = Node::from_str(s, 1);
+        assert_eq!(f.size(), 26)
+    }
+
+    #[test]
+    fn to_string_from_str() {
+        for _ in 0..100 {
+            let n_inputs: usize = rng().random_range(1..1000);
+            let size: usize = rng().random_range(1..1000);
+            let f = Node::random(n_inputs, size, 1, &mut rng());
+            let s = f.to_string();
+            let new_f = Node::from_str(&s, 1);
+            assert_eq!(f.size(), new_f.size());
+            assert_eq!(s, new_f.to_string())
+        }
+    }
+
+    #[test]
+    fn forward() {
+        let s = "(((x_0) & (x_1)) !) ^ ((x_0) >> 3)";
+        let mut input= Vec::new();
+        input.push(25);
+        input.push(21);
+        let inputs = [input];
+        let mut f = Node::from_str(s, 1);
+        let result = f.forward(inputs.as_slice());
+        assert_eq!(result[0], u32::max_value()-18);
+    }
+
+    #[test]
+    fn backward() {
+        let s = "(((x_0) & (x_1)) !) ^ ((x_0) >> 3)";
+        let y = u32::max_value()-27;
+        let init_grads = Box::new([Grad {influence: u32::max_value(), target: y}]);
+        let mut input= Vec::new();
+        input.push(25);
+        input.push(21);
+        let inputs = [input];
+        let mut f = Node::from_str(s, 1);
+        f.forward(inputs.as_slice());
+        f.backward(init_grads);
+        let max = u32::max_value();
+        let id_influence_target = [
+            (1, max, max-27), 
+            (2, max, max-24), 
+            (4, max, 24), 
+            (8, 21, 24), 
+            (9, 25, 24), 
+            (3, max, 10), 
+            (6, max-7, 80)];
+        for (id, exp_influence, exp_target) in id_influence_target {
+            let g = f._find_gate(id);
+            assert!(g.grads.is_some());
+            let Grad { influence, target } = g.grads.clone().unwrap()[0];
+            assert_eq!(exp_influence, influence);
+            assert_eq!(exp_target & influence, target & influence);
+        }
+    }
+}
+

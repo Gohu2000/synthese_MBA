@@ -50,6 +50,8 @@ pub enum Enumerator {
     ProgressiveSize(usize, usize, usize),
     ///ProgressiveSize(size_max, nombre d'itérations par formule)
     AlternateSize(usize, usize),
+    //ILS(size_max, nombre d'itérations par formule)
+    //ILS(usize, usize),
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -223,14 +225,14 @@ impl Greedy {
         let mut scores: Scores;
         for _ in 0..n {
             let s = f.current_score(instance, n_examples);
-            if s > 0.99f32 {return true} 
+            if s > 0.999f32 {return true} 
 
-            scores = f.get_scores(instance, n_examples);
+            scores = f.get_scores(instance);
             let (id, op) = scores.softmax(n_examples,tau, rng);
             f.update_gate(id, op);
         };
         let s = f.current_score(instance, n_examples);
-        return s > 0.99f32
+        return s > 0.999f32
     }
 
     pub fn progressif(&self, instance: &Instance, n_examples: usize, rng: &mut impl Rng, n: usize, tau_min: f32, tau_max: f32, f: &mut Node) -> bool {
@@ -311,7 +313,7 @@ impl Display for Enumerator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Random(size, n, m) => write!(f, "énumeration aléatoire de {n} formules de taille {size} avec {m} itérations par formule"),
-            Self::ProgressiveSize(size_max, m, n) => write!(f, "énumeration aléatoire de {m} formules de taille jusqu'à {size_max} avec {m} itérations par formule"),
+            Self::ProgressiveSize(size_max, m, n) => write!(f, "énumeration aléatoire de {n} formules de taille jusqu'à {size_max} avec {m} itérations par formule"),
             Self::AlternateSize(size_max, m) => write!(f, "énumeration aléatoire de formules dont la taille alterne entre 1 et {size_max} avec {m} itérations par formule"),
         }
     }

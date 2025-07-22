@@ -5,7 +5,7 @@ import argparse
 import json
 
 import cvc5
-from cvc5 import Kind#, TermManager
+from cvc5 import Kind  # , TermManager
 
 Input = list[int]
 Output = int
@@ -161,12 +161,14 @@ def gen_examples(f: FormulaNode, n_bits: int, n_vars: int, n_examples: int) -> T
         task.append((inputs, output))
     return task
 
+
 def parse_filename() -> str:
     parser = argparse.ArgumentParser(description="Lire le nom d'un fichier")
     parser.add_argument("fichier", help="Chemin du fichier à traiter")
     args = parser.parse_args()
     filename = args.fichier
     return filename
+
 
 def examples_from_file(filename: str) -> Tuple[Task, int]:
     with open(filename, "r") as f:
