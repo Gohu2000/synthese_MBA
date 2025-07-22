@@ -1,6 +1,6 @@
 from glob import glob
 
-folder = "~/synthese_MBA/bitvector-diff/instances"
+folder = "/home/gbathie/synthese_MBA/bitvector-diff/instances"
 timeout = 60
 
 for i in glob(folder + "/*.json"):
