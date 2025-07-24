@@ -7,7 +7,7 @@ use std::{
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
-use crate::{formula::Node, solving::{Instance, JsonData, Parametres, Solver, SolverResult}};
+use crate::{formula::Node, solving::{json_data::JsonData, Instance, Parametres, Solver, SolverResult}};
 
 pub enum FinalResult {
     Found(FoundResult),

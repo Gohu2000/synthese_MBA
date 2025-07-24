@@ -1,5 +1,5 @@
 use bitvector_diff::solving::{
-    results::Interpretor, Enumerator, Greedy, JsonData, Parametres, Selection, Solver
+    json_data::JsonData, results::Interpretor, Enumerator, Greedy, Parametres, Selection, Solver
 };
 use clap::Parser;
 use rand::{rng, Rng};
@@ -19,10 +19,10 @@ fn old_calcul(selection: Selection, params:Parametres, rng: &mut impl Rng) {
     let greedy = Greedy::Naif(50.);
     let enumerator = Enumerator::ProgressiveSize(20, 10, 100);
     let solver = Solver{greedy, enumerator};
-    selection.solve_print(MAX_TIME, solver, rng, params, true);
+    selection.solve_print(MAX_TIME, solver, rng, params, true, true);
     for _ in 0..20 {
         //selection.change_instances(&mut rng);
-        selection.solve_print(MAX_TIME, solver, rng, params, false);
+        selection.solve_print(MAX_TIME, solver, rng, params, false, true);
     }
 }
 
@@ -33,7 +33,7 @@ fn main() {
     let enumerator = Enumerator::AlternateSize(20, 1000);
     let solver = Solver{greedy, enumerator};
     let json_data = JsonData::from_file(&input_filename);
-    json_data.solve_final_result(MAX_TIME, solver, &mut rng);
+    json_data.solve_final_result(MAX_TIME, solver, &mut rng, false);
     //let interpretor = Interpretor::from_file("interpretor.txt");
     //interpretor.print_if_counter(selection.solutions, 0);
 }

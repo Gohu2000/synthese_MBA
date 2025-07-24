@@ -1,6 +1,6 @@
 use std::{fs::File, io::Write};
 
-use bitvector_diff::{formula::Node, solving::{JsonData, Parametres}};
+use bitvector_diff::{formula::Node};
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 
@@ -20,7 +20,7 @@ fn generate_formula(n: usize, folder: &str) {
             let mut data_file = File::create(format!("{folder}/formula_{}_{}.txt", usize_to_string(n_inputs), usize_to_string(size))).expect("creation failed");
             let mut buffer = String::new();
             for _ in 0..n {
-                let formula = Node::random(n_inputs, size, 1, &mut rng);
+                let formula = Node::random(n_inputs, size, 1, &mut rng, true);
                 buffer.push_str(&formula.to_string());
                 buffer.push('\n');
             }

@@ -64,10 +64,11 @@ impl UnaryOp {
         }
     }
 
-    pub fn into_iter_others(self) -> UnaryOpIntoIterator {
+    pub fn into_iter_others(self, with_shift: bool) -> UnaryOpIntoIterator {
         UnaryOpIntoIterator {
             unwanted_op: self,
             op: UnaryOp::Not,
+            with_shift
         }
     }
 }
@@ -96,6 +97,7 @@ impl Distribution<UnaryOp> for StandardUniform {
 pub struct UnaryOpIntoIterator {
     unwanted_op: UnaryOp,
     op: UnaryOp,
+    with_shift: bool,
 }
 
 impl Iterator for UnaryOpIntoIterator {
@@ -105,6 +107,7 @@ impl Iterator for UnaryOpIntoIterator {
         let result = self.op; 
         match self.op {
             UnaryOp::Not => self.op = UnaryOp::LeftShift(0),
+            UnaryOp::LeftShift(0) => if self.with_shift {self.op = UnaryOp::LeftShift(1)} else {return None},
             UnaryOp::LeftShift(31) => self.op = UnaryOp::RightShift(0),
             UnaryOp::LeftShift(x) => self.op = UnaryOp::LeftShift(x+1),
             UnaryOp::RightShift(32) => return None,

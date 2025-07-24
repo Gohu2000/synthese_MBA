@@ -1,6 +1,6 @@
 use crate::{formula::{
     grad::Scores, Node
-}, solving::results::{FinalResult, Interpretor}};
+}, solving::{json_data::JsonData, results::{FinalResult, Interpretor}}};
 use rand::{rng, Rng};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -12,16 +12,10 @@ use std::{
 use conv::ValueFrom;
 
 pub mod results;
+pub mod json_data;
 
 /// (n_inputs, n_examples, size)
 pub type Parametres = (usize, usize, usize);
-
-#[derive(Deserialize, Serialize)]
-pub struct JsonData {
-    instance: Instance,
-    solution: String,
-    param: Parametres
-}
 
 #[derive(Deserialize, Serialize)]
 pub struct Instance {
@@ -40,6 +34,8 @@ pub enum Greedy {
     Naif(f32),
     ///Progressif(tau_min, tau_max)
     Progressif(f32, f32),
+    ///ILS(size_max, tau)
+    ILS(usize, f32),
 
 }
 #[derive(Copy, Clone, Debug)]
@@ -65,80 +61,23 @@ pub struct SolverResult {
     time: u128,
 }
 
-impl JsonData {
-    pub fn random(params: Parametres, rng: &mut impl Rng) -> Self {
-        let (n_inputs, n_examples, size) = params;
-        let mut f = Node::random(n_inputs, size, 1, rng);
-        let instance = f.to_instance(n_inputs, n_examples, rng);
-        Self { instance, solution: f.to_string(), param: params }
-    }
-
-    pub fn from_file(filename: &str) -> Self {
-        let mut data_file = File::open(filename).unwrap();
-        let mut file_content = String::new();
-        data_file.read_to_string(&mut file_content).unwrap();
-        Self::from_str(file_content.as_str())
-    }
-
-    pub fn to_file(&self, filename: &str) {
-        let mut data_file = File::create(filename).expect("creation failed");
-        let buffer = self.to_str();
-        data_file.write(buffer.as_bytes()).expect("write failed");
-    }
-
-    pub fn from_str(json_str: &str) -> Self {
-        let jd: Self = serde_json::from_str(json_str).unwrap();
-        jd
-    }
-
-    pub fn to_str(&self) -> String {
-        serde_json::to_string(&self).unwrap()
-    }
-
-    pub fn solve_final_result(self, max_time: u64, solver: Solver, rng: &mut impl Rng) {
-        let JsonData { instance, .. } = &self;
-        let solver_result = instance.solve(max_time, solver, rng);
-        println!("{}", FinalResult::from(solver_result, self, solver, rng))
-    }
-
-    pub fn solve_print(&self, max_time: u64, solver: Solver, rng: &mut impl Rng) {
-        let JsonData { instance, solution, param } = self;
-        let mut node_solution = Node::from_str(solution.as_str(), 1);
-        let (n_inputs, n_examples, size) = *param;
-        let SolverResult { result: f, time } = instance.solve(max_time, solver, rng);
-        println!();
-        println!("{solver}");
-        println!("Paramètres          : (n_inputs, n_examples, size) = ({n_inputs}, {n_examples}, {size})");
-        println!("Temps de calcul     : {time} ms");
-        if let Some(mut g) = f {
-            println!("Formule solution    : {node_solution}");
-            println!("Formule obtenue     : {g}");
-            let s = g.compare(n_inputs, &mut node_solution, rng);
-            println!("Score d'équivalence : {s}");
-            println!("Taille de la formule: {}", g.size());
-        } else {
-            println!("Pas de formule trouvée");
-        }
-    }
-}
-
 impl Instance {
-    pub fn random(params: Parametres, rng: &mut impl Rng) -> Instance {
+    pub fn random(params: Parametres, rng: &mut impl Rng, with_shift: bool) -> Instance {
         let (n_inputs, n_examples, size) = params;
-        let mut f = Node::random(n_inputs, size, 1, rng);
+        let mut f = Node::random(n_inputs, size, 1, rng, with_shift);
         f.to_instance(n_inputs, n_examples, rng)
     }
 
-    pub fn solve(&self, max_time: u64, solver: Solver, rng: &mut impl Rng) -> SolverResult {
-        solver.solve(max_time, &self, rng)
+    pub fn solve(&self, max_time: u64, solver: Solver, rng: &mut impl Rng, with_shift: bool) -> SolverResult {
+        solver.solve(max_time, &self, rng, with_shift)
     }
 }
 
 impl Selection {
-    pub fn new(param: Parametres, rng: &mut impl Rng, n: usize, filename: &str) -> Self {
+    pub fn new(param: Parametres, rng: &mut impl Rng, n: usize, filename: &str, with_shift: bool) -> Self {
         let mut data_file = File::create(filename).expect("creation failed");
         for _ in 0..n {
-            let json_data= JsonData::random(param, rng);
+            let json_data= JsonData::random(param, rng, with_shift);
             let mut buffer = json_data.to_str();
             buffer.push('\n');
             data_file.write(buffer.as_bytes()).expect("write failed");
@@ -162,17 +101,17 @@ impl Selection {
         Self { instances, solutions, params }
     }
 
-    pub fn solve(&self, max_time: u64, solver: Solver, rng: &mut impl Rng) -> Vec<SolverResult> {
+    pub fn solve(&self, max_time: u64, solver: Solver, rng: &mut impl Rng, with_shift: bool) -> Vec<SolverResult> {
         self.instances.iter()
             .enumerate()
-            .map(|(i, instance)| {println!{"{i}"}; solver.solve(max_time, instance, rng)})
+            .map(|(i, instance)| {println!{"{i}"}; solver.solve(max_time, instance, rng, with_shift)})
             .collect()
     }
 
-    pub fn solve_print(&self, max_time: u64, solver: Solver, rng: &mut impl Rng, params: Parametres, reset_selection: bool) {
+    pub fn solve_print(&self, max_time: u64, solver: Solver, rng: &mut impl Rng, params: Parametres, reset_selection: bool, with_shift: bool) {
         let (n_inputs, n_examples, size) = params;
         let now = Instant::now();
-        let result = self.solve(max_time, solver, rng);
+        let result = self.solve(max_time, solver, rng, with_shift);
         let n = result.len();
         let total_time = now.elapsed().as_millis();
         let mut max_time: u128 = 0;
@@ -208,26 +147,29 @@ impl Selection {
 }
 
 impl Greedy {
-    pub fn solve(&self, instance: &Instance, rng: &mut impl Rng, f: &mut Node, n: usize) -> bool {
+    pub fn solve(&self, instance: &Instance, rng: &mut impl Rng, f: &mut Node, n: usize, with_shift: bool) -> bool {
         let n_examples = instance.outputs.len();
         match self {
             Self::Naif(tau) => {
-                self.naif(instance, n_examples, rng, n, *tau, f)
+                self.naif(instance, n_examples, rng, n, *tau, f, with_shift)
             } 
             Self::Progressif(tau_min, tau_max) => {
-                self.progressif(instance, n_examples, rng, n, *tau_min, *tau_max, f)
+                self.progressif(instance, n_examples, rng, n, *tau_min, *tau_max, f, with_shift)
+            } 
+            Self::ILS(_, tau) => {
+                self.naif(instance, n_examples, rng, n, *tau, f, with_shift)
             } 
         }
     }
     
 
-    pub fn naif(&self, instance: &Instance, n_examples: usize, rng: &mut impl Rng, n: usize, tau: f32, f: &mut Node) -> bool {
+    pub fn naif(&self, instance: &Instance, n_examples: usize, rng: &mut impl Rng, n: usize, tau: f32, f: &mut Node, with_shift: bool) -> bool {
         let mut scores: Scores;
         for _ in 0..n {
             let s = f.current_score(instance, n_examples);
             if s > 0.999f32 {return true} 
 
-            scores = f.get_scores(instance);
+            scores = f.get_scores(instance, with_shift);
             let (id, op) = scores.softmax(n_examples,tau, rng);
             f.update_gate(id, op);
         };
@@ -235,27 +177,28 @@ impl Greedy {
         return s > 0.999f32
     }
 
-    pub fn progressif(&self, instance: &Instance, n_examples: usize, rng: &mut impl Rng, n: usize, tau_min: f32, tau_max: f32, f: &mut Node) -> bool {
+    pub fn progressif(&self, instance: &Instance, n_examples: usize, rng: &mut impl Rng, n: usize, tau_min: f32, tau_max: f32, f: &mut Node, with_shift: bool) -> bool {
         let f32n = f32::value_from(n).unwrap();
         let step = 10.*(tau_max-tau_min)/(f32n-10.);
         let mut tau = tau_min;
         for tau in (0..(n/10)).map(|_| {tau += step; tau}) {
-            if self.naif(instance, n_examples, rng, 1, tau, f) {return true}
+            if self.naif(instance, n_examples, rng, 1, tau, f, with_shift) {return true}
         };
         false
     }
 }
 
 impl Enumerator {
-    fn list_formula(&self, n_inputs: usize) -> EnumeratorIntoIterator {
-        EnumeratorIntoIterator {enumerator: *self, n_inputs, compteur: 0}
+    fn list_formula(&self, n_inputs: usize, with_shift: bool) -> EnumeratorIntoIterator {
+        EnumeratorIntoIterator {enumerator: *self, n_inputs, compteur: 0, with_shift}
     }
 }
 
 struct EnumeratorIntoIterator {
     enumerator: Enumerator,
     n_inputs: usize,
-    compteur: usize
+    compteur: usize,
+    with_shift: bool
 }
 
 impl Iterator for EnumeratorIntoIterator {
@@ -267,7 +210,7 @@ impl Iterator for EnumeratorIntoIterator {
             Enumerator::Random(size, m, n) => {
                 if n == 0 {None} else {
                     self.enumerator = Enumerator::Random(size, m, n-1);
-                    Some((Node::random(self.n_inputs, size, 1, &mut rng), m))
+                    Some((Node::random(self.n_inputs, size, 1, &mut rng, self.with_shift), m))
                 }
             },
             Enumerator::ProgressiveSize(size_max, m, n) => {
@@ -275,26 +218,50 @@ impl Iterator for EnumeratorIntoIterator {
                     let formula_per_size = n/size_max;
                     self.compteur += 1 ;
                     let size = self.compteur / formula_per_size + 1;
-                    Some((Node::random(self.n_inputs, size, 1, &mut rng), m))
+                    Some((Node::random(self.n_inputs, size, 1, &mut rng, self.with_shift), m))
                 }
             },
             Enumerator::AlternateSize(size_max, m) => {
                 if self.compteur == size_max {self.compteur = 1} else {self.compteur += 1}
-                    Some((Node::random(self.n_inputs, self.compteur, 1, &mut rng), m))
-            }
+                    Some((Node::random(self.n_inputs, self.compteur, 1, &mut rng, self.with_shift), m))
+            },
         }
     }
 }
 
 impl Solver {
-    fn solve(&self, max_time: u64, instance: &Instance, rng: &mut impl Rng) -> SolverResult {
+    fn solve(&self, max_time: u64, instance: &Instance, rng: &mut impl Rng, with_shift: bool) -> SolverResult {
         let n_inputs = instance.inputs[0].len();
+        let n_examples = instance.outputs.len();
         let now = Instant::now();
-        for (mut f, n) in self.enumerator.list_formula(n_inputs) {
-            if now.elapsed() > Duration::from_secs(max_time) {
-                break
+        if let Greedy::ILS(size_max, _ ) = self.greedy {
+            for (mut f, n) in self.enumerator.list_formula(n_inputs, with_shift) {
+                let mut best_f = f.to_string();
+                let mut best_score = f.current_score(instance, n_examples);
+                loop {
+                    if self.greedy.solve(instance, rng, &mut f, n, with_shift) {return SolverResult {result: Some(f), time: now.elapsed().as_millis()}};
+                    let score = f.current_score(instance, n_examples);
+                    if score > best_score {best_f = f.to_string(); best_score = score}
+                    if now.elapsed() > Duration::from_secs(max_time) || f.size() > size_max  {  
+                        break
+                    }
+                    if f.size() == size_max {
+                        f = Node::from_str(&best_f, 1)
+                    }
+                    f.mutate(n_inputs, true, rng, with_shift);
+                }
+                if now.elapsed() > Duration::from_secs(max_time) {  
+                    break
+                }
             }
-            if self.greedy.solve(instance, rng, &mut f, n) {return SolverResult {result: Some(f), time: now.elapsed().as_millis()}}
+        }
+        else {
+            for (mut f, n) in self.enumerator.list_formula(n_inputs, with_shift) {
+                if now.elapsed() > Duration::from_secs(max_time) {
+                    break
+                }
+                if self.greedy.solve(instance, rng, &mut f, n, with_shift) {return SolverResult {result: Some(f), time: now.elapsed().as_millis()}}
+            }
         }
         SolverResult {result: None, time: now.elapsed().as_millis()}
     }
@@ -305,6 +272,7 @@ impl Display for Greedy {
         match self {
             Self::Naif(tau) => write!(f, "algorithme naif avec tau = {tau}"),
             Self::Progressif(tau_min, tau_max) => write!(f, "algorithme progressif avec tau allant de {tau_min} à {tau_max}"),
+            Self::ILS(size_max, tau) => write!(f, "iterated local search limitée à une taille de {size_max} avec tau = {tau}"),
         }
     }
 }

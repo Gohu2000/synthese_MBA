@@ -11,13 +11,16 @@ pub struct Grad {
     pub target: u32,
 }
 
+#[derive(Debug)]
 pub struct Scores {
     pub values: HashMap<usize, Deltas>,
 }
+
+#[derive(Debug)]
 pub enum Deltas {
-    Input(HashMap<usize, u32>),
-    Unary(HashMap<UnaryOp, u32>),
-    Binary(HashMap<BinaryOp, u32>),
+    Input(HashMap<usize, i32>),
+    Unary(HashMap<UnaryOp, i32>),
+    Binary(HashMap<BinaryOp, i32>),
 }
 
 impl Scores {
@@ -28,7 +31,7 @@ impl Scores {
     }
 
     pub fn softmax(&self, n_examples: usize ,tau:f32, rng: &mut impl Rng) -> (usize, Op) {
-        let f = |v: u32| {exp(tau*(v as f32)/(32.*f32::value_from(n_examples).unwrap()))};
+        let f = |v: i32| {exp(tau*(v as f32)/(32.*f32::value_from(n_examples).unwrap()))};
         let mut sum = 0f32;
         let mut hashmapsum = HashMap::new();
         for (id, delta) in &self.values {
@@ -51,7 +54,7 @@ impl Scores {
 }
 
 impl Deltas {
-    fn sum(&self, f: impl Fn(u32) -> f32) -> f32 {
+    fn sum(&self, f: impl Fn(i32) -> f32) -> f32 {
         match self {
             Deltas::Input(h) => {
                 let mut sum = 0f32;
@@ -77,7 +80,7 @@ impl Deltas {
         }
     }
 
-    fn get_op(&self, mut p:f32, f: impl Fn(u32) -> f32) -> Op {
+    fn get_op(&self, mut p:f32, f: impl Fn(i32) -> f32) -> Op {
         match self {
             Deltas::Input(h) => {
                 for (op, v) in h {
@@ -86,6 +89,7 @@ impl Deltas {
                         return Op::Input(*op)
                     }
                 }
+                println!("{p}");
                 panic!("{p}")
             },
             Deltas::Unary(h) => {
@@ -95,6 +99,7 @@ impl Deltas {
                         return Op::Unary(*op)
                     }
                 }
+                println!("{p}");
                 panic!("{p}")
             },
             Deltas::Binary(h) => {
@@ -104,6 +109,7 @@ impl Deltas {
                         return Op::Binary(*op)
                     }
                 }
+                println!("{p}");
                 panic!("{p}")
             },
         }

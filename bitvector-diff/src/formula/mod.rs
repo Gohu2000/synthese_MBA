@@ -156,8 +156,8 @@ impl NodeContent {
         }
     }
 
-    fn compute_deltas(&mut self, grads: &[Grad], outputs: &[u32], inputs: &[Vec<u32>]) -> Deltas {
-        let p = |n: u32| {u32::count_ones(n)};
+    fn compute_deltas(&mut self, grads: &[Grad], outputs: &[u32], inputs: &[Vec<u32>], with_shift: bool) -> Deltas {
+        let p = |n: u32| {u32::count_ones(n) as i32};
         let compute_ratio_correct_bits = |output: u32, Grad {influence, target}| {
             p((output.bitxor(target)).not().bitand(influence))
         };
@@ -178,7 +178,7 @@ impl NodeContent {
             NodeContent::UnaryNode { op, child } => {
                 let child_out = child.forward(inputs);
                 let mut hashmap = HashMap::new();
-                for new_op in op.into_iter_others() {
+                for new_op in op.into_iter_others(with_shift) {
                     let v = child_out.iter().enumerate().map(|(k, x)| {
                         compute_ratio_correct_bits(new_op.apply(*x), grads[k]) - compute_ratio_correct_bits(outputs[k], grads[k])
                     }).sum();
@@ -201,15 +201,15 @@ impl NodeContent {
         }
     }
 
-    fn compute_scores(&mut self, inputs: &[Vec<u32>], scores: &mut Scores) {
+    fn compute_scores(&mut self, inputs: &[Vec<u32>], scores: &mut Scores, with_shift: bool) {
         match self {
             NodeContent::Input(_) => (),
             NodeContent::UnaryNode { child, .. } => {
-                child.compute_scores(inputs, scores)
+                child.compute_scores(inputs, scores, with_shift)
             }
             NodeContent::BinaryNode { left, right, .. } => {
-                left.compute_scores(inputs, scores);
-                right.compute_scores(inputs, scores);
+                left.compute_scores(inputs, scores, with_shift);
+                right.compute_scores(inputs, scores, with_shift);
             },
         }
     }
@@ -261,23 +261,23 @@ impl Node {
         self.data.clear_forward()
     }
 
-    pub fn random(n_inputs: usize, size: usize, id: usize, rng: &mut impl Rng) -> Self {
+    pub fn random(n_inputs: usize, size: usize, id: usize, rng: &mut impl Rng, with_shift: bool) -> Self {
         if size == 1 {
             Node::new(id, NodeContent::Input(rng.random_range(0..n_inputs)))
         } else {
             let is_unary = rng.random_bool(0.25) || size == 2; // TODO: change proba ?
             if is_unary {
-                let child = Self::random(n_inputs, size - 1, 2 * id, rng);
+                let child = Self::random(n_inputs, size - 1, 2 * id, rng, with_shift);
                 let data = NodeContent::UnaryNode {
-                    op: rng.random(),
+                    op: if with_shift {rng.random()} else {UnaryOp::Not},
                     child: Box::from(child),
                 };
                 Node::new(id, data)
             } else {
                 let left_size = rng.random_range(1..=(size - 2));
-                let left_child = Self::random(n_inputs, left_size, 2 * id, rng);
+                let left_child = Self::random(n_inputs, left_size, 2 * id, rng, with_shift);
                 let right_size = size - 1 - left_size;
-                let right_child = Self::random(n_inputs, right_size, 2 * id + 1, rng);
+                let right_child = Self::random(n_inputs, right_size, 2 * id + 1, rng, with_shift);
                 let data = NodeContent::BinaryNode {
                     op: rng.random(),
                     left: Box::from(left_child),
@@ -341,20 +341,20 @@ impl Node {
         }
     }
 
-    pub fn mutate(&mut self, n_inputs: usize, equilibrate: bool, rng: &mut impl Rng) {
+    pub fn mutate(&mut self, n_inputs: usize, equilibrate: bool, rng: &mut impl Rng, with_shift: bool) {
         let id_leave = self.choose_leave(equilibrate, rng);
         let moves = moves_for_id(id_leave);
         let leave = self.walk_outputs(moves);
         let is_unary = rng.random_bool(0.5);
         if is_unary {
-            let child = Self::random(n_inputs, 1, 2 * id_leave, rng);
+            let child = Self::random(n_inputs, 1, 2 * id_leave, rng, with_shift);
             leave.data = NodeContent::UnaryNode {
                 op: rng.random(),
                 child: Box::from(child),
             };
         } else {
-            let left_child = Self::random(n_inputs, 1, 2 * id_leave, rng);
-            let right_child = Self::random(n_inputs, 1, 2 * id_leave + 1, rng);
+            let left_child = Self::random(n_inputs, 1, 2 * id_leave, rng, with_shift);
+            let right_child = Self::random(n_inputs, 1, 2 * id_leave + 1, rng, with_shift);
             leave.data = NodeContent::BinaryNode {
                 op: rng.random(),
                 left: Box::from(left_child),
@@ -433,17 +433,17 @@ impl Node {
         self.clear_backward();
     }
 
-    fn compute_deltas(&mut self, inputs: &[Vec<u32>]) -> Deltas {
+    fn compute_deltas(&mut self, inputs: &[Vec<u32>], with_shift: bool) -> Deltas {
         self.data
-            .compute_deltas(self.grads.as_ref().unwrap(), self.outputs.as_ref().unwrap(), inputs)
+            .compute_deltas(self.grads.as_ref().unwrap(), self.outputs.as_ref().unwrap(), inputs, with_shift)
     }
 
-    fn compute_scores(&mut self, inputs: &[Vec<u32>], scores: &mut Scores) {
-        scores.values.insert(self.id.into(), self.compute_deltas(inputs));
-        self.data.compute_scores(inputs, scores);
+    fn compute_scores(&mut self, inputs: &[Vec<u32>], scores: &mut Scores, with_shift: bool) {
+        scores.values.insert(self.id.into(), self.compute_deltas(inputs, with_shift));
+        self.data.compute_scores(inputs, scores, with_shift);
     }
 
-    pub fn get_scores(&mut self, instance: &Instance) -> Scores {
+    pub fn get_scores(&mut self, instance: &Instance, with_shift: bool) -> Scores {
         let inputs = instance.inputs.as_slice();
         let targets = &instance.outputs;
 
@@ -451,7 +451,7 @@ impl Node {
         self.forward(inputs);
         self.backward(init_grads);
         let mut scores = Scores::new();
-        self.compute_scores(inputs, &mut scores);
+        self.compute_scores(inputs, &mut scores, with_shift);
         scores
     }
 
@@ -531,7 +531,7 @@ mod test {
         for _ in 0..100 {
             let n_inputs: usize = rng().random_range(1..1000);
             let size: usize = rng().random_range(1..1000);
-            let f = Node::random(n_inputs, size, 1, &mut rng());
+            let f = Node::random(n_inputs, size, 1, &mut rng(), true);
             assert_eq!(f.size(), size)
         }
     }
@@ -548,7 +548,7 @@ mod test {
         for _ in 0..100 {
             let n_inputs: usize = rng().random_range(1..1000);
             let size: usize = rng().random_range(1..1000);
-            let f = Node::random(n_inputs, size, 1, &mut rng());
+            let f = Node::random(n_inputs, size, 1, &mut rng(), true);
             let s = f.to_string();
             let new_f = Node::from_str(&s, 1);
             assert_eq!(f.size(), new_f.size());
