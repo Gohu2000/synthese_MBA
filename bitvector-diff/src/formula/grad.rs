@@ -46,6 +46,7 @@ impl Scores {
             sum_of_id = *hashmapsum.get(id).unwrap();
             p -= sum_of_id / sum;
             if p <= 0.002 {
+                //println!("{:?}", *delta);
                 return (*id, delta.get_op(p + sum_of_id / sum, |v| {f(v)/sum}))
             }
         }

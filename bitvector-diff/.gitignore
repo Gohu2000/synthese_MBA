@@ -1,4 +1,7 @@
 instances/
+instances_no_shift/
+xyntia_instances/
+xyntia_instances_no_shift/
 stdout/
 *.txt
 *.gz

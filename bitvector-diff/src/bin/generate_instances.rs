@@ -46,5 +46,5 @@ fn old_generate_instances(n: usize, folder: &str) {
 }
 
 fn main() {
-    generate_instances(50, "instances")
+    generate_instances(100, "instances_no_shift")
 }
