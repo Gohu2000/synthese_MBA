@@ -1,14 +1,8 @@
 #!/bin/bash
 
-# Install Rust/Cargo if not already present
-if [ ! -d "$HOME/.cargo" ]; then
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-fi
-
-# Add Cargo to the PATH for this session
-source $HOME/.cargo/env
-
-# Now, proceed with your original commands
-cd ~/synthese_MBA/bitvector-diff
+rustup install 1.87.0
+rustup override set 1.87.0
+cargo clean
+cargo update
 cargo build -r
 ./target/release/generate_instances
