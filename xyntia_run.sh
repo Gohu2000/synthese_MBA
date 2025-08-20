@@ -1,6 +1,5 @@
 #!/bin/bash
 
-set -e
 echo canard0
 cd ~/synthese_MBA/xyntia
 #{
