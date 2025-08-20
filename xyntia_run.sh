@@ -9,6 +9,7 @@ echo canard1
 opam init -y --disable-sandboxing
 eval $(opam env)
 echo canard2
+opam switch remove . -y
 opam switch create . 4.14.1 -y
 eval $(opam env)
 #} > /dev/null 2>&1
