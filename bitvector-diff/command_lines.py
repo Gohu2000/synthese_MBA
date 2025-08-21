@@ -1,6 +1,6 @@
 from glob import glob
 
-folder = "/home/hbarzu/synthese_MBA/bitvector-diff/instances"
+folder = "/home/hbarzu/synthese_MBA/bitvector-diff/instances_no_shift"
 timeout = 60
 
 files = glob(folder + "/instance_??_512_??_*.json")
