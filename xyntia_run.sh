@@ -11,5 +11,4 @@ opam switch create . 4.14.1 -y
 eval $(opam env)
 } > /dev/null 2>&1
 
-python3 xyntia_command_lines.py | parallel -j25 --joblog ./parallel.log --ssh oarsh --slf $OAR_NODEFILE
-echo script_end
+python3 xyntia_command_lines.py | parallel -j50 --joblog ./parallel.log --ssh oarsh --slf $OAR_NODEFILE
