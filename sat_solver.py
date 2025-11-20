@@ -1,18 +1,19 @@
 import random
 import time
 from typing import Tuple
+import argparse
+import json
 
 import cvc5
-from cvc5 import Kind, TermManager
+from cvc5 import Kind  # , TermManager
 
-type Input = list[int]
-type Output = int
-type Example = Tuple[Input, Output]
-type Task = list[Example]
+Input = list[int]
+Output = int
+Example = Tuple[Input, Output]
+Task = list[Example]
 
 
 def solve_cvc5(examples: Task, bit_vec_size: int, n_vars: int):
-    tm = cvc5.TermManager()
     slv = cvc5.Solver()
 
     # required options
@@ -24,25 +25,25 @@ def solve_cvc5(examples: Task, bit_vec_size: int, n_vars: int):
     slv.setLogic("QF_BV")
 
     # Declare BitVec type of the desired width
-    bit_vec = tm.mkBitVectorSort(bit_vec_size)
+    bit_vec = slv.mkBitVectorSort(bit_vec_size)
 
     # Declare input variables
-    vars = [tm.mkVar(bit_vec, f"x_{i}") for i in range(n_vars)]
+    vars = [slv.mkVar(bit_vec, f"x_{i}") for i in range(n_vars)]
 
     # Declare Grammar non-terminals
-    start = tm.mkVar(bit_vec, "Start")
+    start = slv.mkVar(bit_vec, "Start")
 
     # Define the rules
     ## Constants
-    zero = tm.mkBitVector(bit_vec_size, 0)
-    one = tm.mkBitVector(bit_vec_size, 1)
+    zero = slv.mkBitVector(bit_vec_size, 0)
+    one = slv.mkBitVector(bit_vec_size, 1)
 
     ## Rules
     # https://cvc5.github.io/docs/cvc5-1.2.1/api/python/base/kind.html
     # maybe useful : https://github.com/cvc5/artifact-fmcad23-sygus/blob/main/grammars/bv.sy
-    And = tm.mkTerm(Kind.BITVECTOR_AND, start, start)
-    Or = tm.mkTerm(Kind.BITVECTOR_OR, start, start)
-    Not = tm.mkTerm(Kind.BITVECTOR_NOT, start)
+    And = slv.mkTerm(Kind.BITVECTOR_AND, start, start)
+    Or = slv.mkTerm(Kind.BITVECTOR_OR, start, start)
+    Not = slv.mkTerm(Kind.BITVECTOR_NOT, start)
 
     # Todo: also allow shifts, etc
 
@@ -54,13 +55,13 @@ def solve_cvc5(examples: Task, bit_vec_size: int, n_vars: int):
     # For each example pair
     for inputs, output in examples:
         # Create values from input variables
-        input_bitvecs = [tm.mkBitVector(bit_vec_size, x) for x in inputs]
+        input_bitvecs = [slv.mkBitVector(bit_vec_size, x) for x in inputs]
         # Apply f to these values
-        f_output = tm.mkTerm(Kind.APPLY_UF, func, *input_bitvecs)
+        f_output = slv.mkTerm(Kind.APPLY_UF, func, *input_bitvecs)
         # Create value for output
-        output_bitvec = tm.mkBitVector(bit_vec_size, output)
+        output_bitvec = slv.mkBitVector(bit_vec_size, output)
         # Constraint: value of f must be equal to value of output.
-        slv.addSygusConstraint(tm.mkTerm(Kind.EQUAL, f_output, output_bitvec))
+        slv.addSygusConstraint(slv.mkTerm(Kind.EQUAL, f_output, output_bitvec))
 
     print("starting synth")
     if slv.checkSynth().hasSolution():
@@ -161,6 +162,27 @@ def gen_examples(f: FormulaNode, n_bits: int, n_vars: int, n_examples: int) -> T
     return task
 
 
+def parse_filename() -> str:
+    parser = argparse.ArgumentParser(description="Lire le nom d'un fichier")
+    parser.add_argument("fichier", help="Chemin du fichier à traiter")
+    args = parser.parse_args()
+    filename = args.fichier
+    return filename
+
+
+def examples_from_file(filename: str) -> Tuple[Task, int]:
+    with open(filename, "r") as f:
+        data = json.load(f)
+    n_vars, n_examples, f_size = data["param"]
+    task = []
+    for i in range(n_examples):
+        input = data["instance"]["inputs"][i]
+        output = data["instance"]["outputs"][i]
+        example = (input, output)
+        task.append(example)
+    return task, n_vars
+
+
 if __name__ == "__main__":
     # solve_cvc5(
     #     [
@@ -172,7 +194,7 @@ if __name__ == "__main__":
     #     bit_vec_size=16,
     #     n_vars=2,
     # )
-
+    """
     N_BITS = 3
     N_VARS = 5
     N_EXAMPLES = 200
@@ -180,7 +202,11 @@ if __name__ == "__main__":
     f = random_formula(F_SIZE, N_VARS)
     print(f.to_string())
     ex = gen_examples(f, N_BITS, N_VARS, N_EXAMPLES)
+    """
+    N_BITS = 32
+    filename = parse_filename()
+    ex, n_vars = examples_from_file(filename)
     start = time.time()
-    solve_cvc5(ex, N_BITS, N_VARS)
+    solve_cvc5(ex, N_BITS, n_vars)
     elapsed = time.time() - start
     print(f"Time: {elapsed:.3f}s")

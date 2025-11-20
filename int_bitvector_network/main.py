@@ -59,11 +59,11 @@ def test_benchmark(algoname, nb_instances, dir_benchmark):
 def benchmark1():
     l_n = [5]
     l_size = [10]
-    l_nb_bits=[5]
+    l_nb_bits=[32]
     l_nb_inputs=[128]
     nb_instances = 100
     dir_benchmark = "benchmark2"
-    filename = "5_5_10.txt"
+    filename = "5_32_10.txt"
 
     generate_benchmark(l_n, l_size, l_nb_bits, l_nb_inputs, nb_instances, dir_benchmark)
 

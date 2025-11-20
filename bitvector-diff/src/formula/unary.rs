@@ -27,13 +27,48 @@ impl UnaryOp {
                 target: target.not(),
             },
             UnaryOp::LeftShift(i) => Grad {
-                influence: influence.unbounded_shl(*i),
-                target: target.unbounded_shl(*i),
-            },
-            UnaryOp::RightShift(i) => Grad {
                 influence: influence.unbounded_shr(*i),
                 target: target.unbounded_shr(*i),
             },
+            UnaryOp::RightShift(i) => Grad {
+                influence: influence.unbounded_shl(*i),
+                target: target.unbounded_shl(*i),
+            },
+        }
+    }
+
+    pub fn from_char(c:char, i_opt: Option<&str>) -> Result<Self, &'static str> {
+        match c {
+            '!' => Ok(UnaryOp::Not),
+            '<' => {
+                if let Some(i_str) = i_opt {
+                    if let Ok(i) = u32::from_str_radix(i_str, 10) {
+                        Ok(UnaryOp::LeftShift(i))
+                    }
+                    else {Err("Le décalage du shift doit être un entier")}
+                }
+                else {Err("Le décalage du shift doit être précisé")}
+                
+            },
+            '>' => {
+                if let Some(i_str) = i_opt {
+                    if let Ok(i) = u32::from_str_radix(i_str, 10) {
+                        Ok(UnaryOp::RightShift(i))
+                    }
+                    else {Err("Le décalage du shift doit être un entier")}
+                }
+                else {Err("Le décalage du shift doit être précisé")}
+                
+            },
+            _ => Err("Le charactère ne correspond pas à une opération binaire.")
+        }
+    }
+
+    pub fn into_iter_others(self, with_shift: bool) -> UnaryOpIntoIterator {
+        UnaryOpIntoIterator {
+            unwanted_op: self,
+            op: UnaryOp::Not,
+            with_shift
         }
     }
 }
@@ -56,6 +91,30 @@ impl Distribution<UnaryOp> for StandardUniform {
             2 => UnaryOp::RightShift(rng.random_range(0..=32)),
             _ => unreachable!(),
         }
+    }
+}
+
+pub struct UnaryOpIntoIterator {
+    unwanted_op: UnaryOp,
+    op: UnaryOp,
+    with_shift: bool,
+}
+
+impl Iterator for UnaryOpIntoIterator {
+    type Item = UnaryOp;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let result = self.op; 
+        match self.op {
+            UnaryOp::Not => self.op = UnaryOp::LeftShift(0),
+            UnaryOp::LeftShift(1) => if self.with_shift {self.op = UnaryOp::LeftShift(2)} else {return None},
+            UnaryOp::LeftShift(31) => self.op = UnaryOp::RightShift(0),
+            UnaryOp::LeftShift(x) => self.op = UnaryOp::LeftShift(x+1),
+            UnaryOp::RightShift(32) => return None,
+            UnaryOp::RightShift(x) => self.op = UnaryOp::RightShift(x+1),
+             
+        };
+        if result == self.unwanted_op {self.next()} else {Some(result)}
     }
 }
 
@@ -87,6 +146,32 @@ mod test {
             let z = shift_right.apply(y);
             assert!(z <= x);
             assert_eq!(x & z, z);
+        }
+    }
+
+    #[test]
+    fn shift_32_is_0() {
+        for _ in 0..100 {
+            let x: u32 = rng().random();
+            let shift_left = UnaryOp::LeftShift(32);
+            let shift_right = UnaryOp::RightShift(32);
+            let y = shift_left.apply(x);
+            let z = shift_right.apply(x);
+            assert_eq!(y, 0);
+            assert_eq!(z, 0);
+        }
+    }
+
+    #[test]
+    fn shift_0_is_id() {
+        for _ in 0..100 {
+            let x: u32 = rng().random();
+            let shift_left = UnaryOp::LeftShift(0);
+            let shift_right = UnaryOp::RightShift(0);
+            let y = shift_left.apply(x);
+            let z = shift_right.apply(x);
+            assert_eq!(y, x);
+            assert_eq!(z, x);
         }
     }
 }

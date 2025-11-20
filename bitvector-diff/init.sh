@@ -1,0 +1,1 @@
+oarsub -l host=1,walltime=1:00:00 -p "cluster='paradoxe'" ~/synthese_MBA/bitvector-diff/run_init.sh -q default
